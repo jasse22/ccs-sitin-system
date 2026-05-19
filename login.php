@@ -84,7 +84,7 @@ nav{background:#1e3a5f;height:54px;padding:0 24px;display:flex;align-items:cente
 </style>
 </head>
 <body>
-<nav>
+  <nav>
   <a class="nav-brand" href="index.php">
     <img src="Uclogo.png" alt="UC Logo"/>
     <div>
@@ -94,7 +94,7 @@ nav{background:#1e3a5f;height:54px;padding:0 24px;display:flex;align-items:cente
   </a>
   <div class="nav-links">
     <a href="index.php">Home</a>
-    <a href="#">About</a>
+    <a href="#" onclick="openAboutModal();return false;">About</a>
     <a href="register.php" class="btn-register-nav">Register</a>
   </div>
 </nav>
@@ -122,7 +122,7 @@ nav{background:#1e3a5f;height:54px;padding:0 24px;display:flex;align-items:cente
           <input type="password" name="password" required/>
         </div>
         <div class="extras">
-          <a href="#" class="link">Forgot password?</a>
+          <a href="forgot_password.php" class="link">Forgot password?</a>
         </div>
         <button type="submit" class="btn">Login</button>
       </form>
@@ -130,5 +130,41 @@ nav{background:#1e3a5f;height:54px;padding:0 24px;display:flex;align-items:cente
     </div>
   </div>
 </div>
+<!-- About Modal -->
+<div id="aboutModal" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.5);z-index:9999;align-items:center;justify-content:center;">
+    <div style="background:#fff;border-radius:12px;max-width:500px;width:90%;padding:30px;position:relative;box-shadow:0 4px 20px rgba(0,0,0,0.3);">
+        <span onclick="closeAboutModal()" style="position:absolute;top:15px;right:20px;font-size:24px;cursor:pointer;color:#9aa5b4;">&times;</span>
+        
+        <div style="text-align:center;margin-bottom:20px;">
+            <img src="Uclogo.png" alt="UC Logo" style="width:60px;height:60px;border-radius:50%;object-fit:cover;">
+            <h2 style="color:#1e3a5f;margin-top:10px;">About CCS Sit-in System</h2>
+        </div>
+        
+        <div style="font-size:14px;color:#4a5568;line-height:1.8;">
+            <p><strong>Version:</strong> 1.0.0</p>
+            <p><strong>College of Computer Studies</strong></p>
+            <p><strong>University of Cebu - Main Campus</strong></p>
+            <p style="margin-top:15px;">This Sit-in Monitoring System allows students to reserve laboratory slots, track their sit-in sessions, and receive announcements from the administration.</p>
+            <p style="margin-top:10px;font-size:12px;color:#9aa5b4;">&copy; 2026 College of Computer Studies</p>
+        </div>
+        
+        <button onclick="closeAboutModal()" style="display:block;width:100%;padding:10px;margin-top:20px;border:none;border-radius:6px;background:#1e3a5f;color:#fff;font-size:14px;font-weight:600;cursor:pointer;">Close</button>
+    </div>
+</div>
+
+<script>
+function openAboutModal() {
+    document.getElementById('aboutModal').style.display = 'flex';
+}
+function closeAboutModal() {
+    document.getElementById('aboutModal').style.display = 'none';
+}
+// Close modal when clicking outside
+document.getElementById('aboutModal').addEventListener('click', function(e) {
+    if (e.target === this) {
+        closeAboutModal();
+    }
+});
+</script>
 </body>
 </html>

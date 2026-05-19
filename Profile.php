@@ -106,13 +106,10 @@ hr.divider{border:none;border-top:1px solid #eef0f3;margin:6px 0 16px;}
 </style>
 </head>
 <body>
-<nav>
+  <nav>
   <div class="nav-brand">CCS Sit-in Monitoring System</div>
   <div class="nav-links">
-    <a href="notifications.php">
-        Notifications 
-        <span id="notif-badge" style="display:none; background:#e63946; color:white; border-radius:10px; padding:2px 6px; font-size:10px; font-weight:bold;">0</span>
-    </a>
+    <?php include 'notif_dropdown.php'; ?>
     <a href="homepage.php">Home</a>
     <a href="profile.php" class="active">Edit Profile</a>
     <a href="history.php">History</a>
@@ -120,7 +117,6 @@ hr.divider{border:none;border-top:1px solid #eef0f3;margin:6px 0 16px;}
     <a href="logout.php" class="btn-logout">Log out</a>
   </div>
 </nav>
-
 <div class="page-body">
   <div class="page-header">
     <h1>Edit Profile</h1>

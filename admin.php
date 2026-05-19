@@ -76,22 +76,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 body{font-family:'Plus Jakarta Sans',sans-serif;background:#f7f8fa;min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px 16px;}
 .wrap{width:100%;max-width:400px;}
 .header{text-align:center;margin-bottom:24px;}
-.header img{width:72px;height:72px;border-radius:50%;border:2px solid #c5d5e8;object-fit:cover;}
+.header img{width:80px;height:80px;border-radius:50%;border:2px solid #c5d5e8;object-fit:cover;}
 .header h1{font-size:18px;font-weight:700;color:#1e3a5f;margin-top:12px;}
 .header p{font-size:12px;color:#9aa5b4;margin-top:3px;}
-.admin-badge{display:inline-block;background:#1e3a5f;color:#fff;font-size:10px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;padding:3px 11px;border-radius:20px;margin-top:8px;}
-.card{background:#fff;border:1px solid #e2e6ea;border-radius:8px;overflow:hidden;box-shadow:0 4px 20px rgba(0,0,0,0.06);}
-.card-top{background:#1e3a5f;padding:14px 22px;}
-.card-top h2{color:#fff;font-size:13.5px;font-weight:600;}
+.admin-badge{display:inline-block;background:#1e3a5f;color:#fff;font-size:10px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;padding:4px 14px;border-radius:20px;margin-top:8px;}
+.card{background:#fff;border:1px solid #e2e6ea;border-radius:12px;overflow:hidden;box-shadow:0 4px 20px rgba(0,0,0,0.06);}
+.card-top{background:linear-gradient(135deg, #1e3a5f, #2a5a8a);padding:16px 22px;}
+.card-top h2{color:#fff;font-size:14px;font-weight:700;}
 .card-top p{color:rgba(255,255,255,0.45);font-size:12px;margin-top:2px;}
-.card-body{padding:24px 24px 28px;}
+.card-body{padding:28px 24px 30px;}
 .alert-error{background:#fff5f5;border:1px solid #fed7d7;color:#c53030;padding:10px 13px;border-radius:6px;font-size:13px;margin-bottom:18px;}
-.field{margin-bottom:14px;}
+.field{margin-bottom:16px;}
 .field label{display:block;font-size:11px;font-weight:700;color:#4a5568;margin-bottom:5px;text-transform:uppercase;letter-spacing:0.04em;}
-.field input{width:100%;padding:9px 12px;border:1px solid #d0d7e2;border-radius:6px;font-size:13.5px;font-family:'Plus Jakarta Sans',sans-serif;color:#1e2a38;background:#fff;outline:none;transition:border-color .15s;}
+.field input{width:100%;padding:10px 14px;border:1px solid #d0d7e2;border-radius:8px;font-size:13.5px;font-family:'Plus Jakarta Sans',sans-serif;color:#1e2a38;background:#fff;outline:none;transition:border-color .15s;}
 .field input:focus{border-color:#1e3a5f;box-shadow:0 0 0 3px rgba(30,58,95,0.08);}
 .field input::placeholder{color:#b0bac8;}
-.btn{width:100%;padding:11px;border:none;border-radius:6px;background:#1e3a5f;color:#fff;font-size:13.5px;font-weight:600;font-family:'Plus Jakarta Sans',sans-serif;cursor:pointer;transition:background .15s;margin-top:4px;}
+.btn{width:100%;padding:11px;border:none;border-radius:8px;background:#1e3a5f;color:#fff;font-size:13.5px;font-weight:600;font-family:'Plus Jakarta Sans',sans-serif;cursor:pointer;transition:background .15s;margin-top:4px;}
 .btn:hover{background:#16304f;}
 .back-link{text-align:center;margin-top:16px;font-size:13px;color:#9aa5b4;}
 .back-link a{color:#1e3a5f;font-weight:600;text-decoration:none;}

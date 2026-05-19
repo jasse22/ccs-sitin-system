@@ -128,8 +128,9 @@ try {
     <div class="logo">CCS Admin Dashboard</div>
     <div class="nav-links">
         <a href="admin_dashboard.php">Home</a>
+        <a href="admin_reservations.php">Reservations</a>
         <a href="admin_feedback.php" class="active">View Student Feedback</a>
-        <a href="admin_logout.php" class="btn-logout">Log out</a>
+        <a href="logout.php" class="btn-logout">Log out</a>
     </div>
 </div>
 
@@ -149,7 +150,9 @@ try {
                     <?php foreach ($feedbacks as $row): ?>
                         <tr>
                             <td class="student-name"><?php echo htmlspecialchars($row['student_name']); ?></td>
+                            
                             <td><?php echo htmlspecialchars(str_replace("Feedback: ", "", $row['message'])); ?></td>
+                            
                             <td class="date-sent"><?php echo htmlspecialchars(date('M d, Y g:i A', strtotime($row['created_at']))); ?></td>
                         </tr>
                     <?php endforeach; ?>

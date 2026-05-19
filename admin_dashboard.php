@@ -93,12 +93,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $name    = trim($_POST['student_name'] ?? '');
         $purpose = trim($_POST['purpose']      ?? '');
         $lab     = trim($_POST['lab']          ?? '');
+        $pc_num  = (int)($_POST['pc_number']   ?? 0);
 
-        if (!$id_num || !$name || !$purpose || !$lab) {
+        if (!$id_num || !$name || !$purpose || !$lab || !$pc_num) {
             header('Location: admin_dashboard.php?page=sitin&msg=sitin_err'); exit;
         }
 
         try {
+            // Check if PC is available
+            $pcCheck = $pdo->prepare("SELECT status FROM computers WHERE lab_room = ? AND pc_number = ?");
+            $pcCheck->execute([$lab, $pc_num]);
+            $pcStatus = $pcCheck->fetchColumn();
+            
+            if ($pcStatus !== 'available') {
+                header('Location: admin_dashboard.php?page=sitin&msg=pc_occupied'); exit;
+            }
+
             $stu = $pdo->prepare("SELECT * FROM students WHERE id_number = ? LIMIT 1");
             $stu->execute([$id_num]);
             $found = $stu->fetch();
@@ -109,14 +119,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 }
                 $pdo->prepare("UPDATE students SET session = session - 1 WHERE id = ? AND session > 0")
                     ->execute([$found['id']]);
-                $pdo->prepare("INSERT INTO sit_in_history (student_id, id_number, fullname, sit_purpose, laboratory, login_time, date) VALUES (?,?,?,?,?,NOW(),CURDATE())")
-                    ->execute([$found['id'], $id_num, $name, $purpose, $lab]);
+                
+                $pdo->prepare("UPDATE computers SET status = 'occupied', current_student_id = ? WHERE lab_room = ? AND pc_number = ?")
+                    ->execute([$found['id'], $lab, $pc_num]);
+                
+                $pdo->prepare("INSERT INTO sit_in_history (student_id, id_number, fullname, sit_purpose, laboratory, pc_number, login_time, date) VALUES (?,?,?,?,?,?,NOW(),CURDATE())")
+                    ->execute([$found['id'], $id_num, $name, $purpose, $lab, $pc_num]);
             } else {
-                $pdo->prepare("INSERT INTO sit_in_history (student_id, id_number, fullname, sit_purpose, laboratory, login_time, date) VALUES (NULL,?,?,?,?,NOW(),CURDATE())")
-                    ->execute([$id_num, $name, $purpose, $lab]);
+                $pdo->prepare("UPDATE computers SET status = 'occupied' WHERE lab_room = ? AND pc_number = ?")
+                    ->execute([$lab, $pc_num]);
+                $pdo->prepare("INSERT INTO sit_in_history (student_id, id_number, fullname, sit_purpose, laboratory, pc_number, login_time, date) VALUES (NULL,?,?,?,?,?,NOW(),CURDATE())")
+                    ->execute([$id_num, $name, $purpose, $lab, $pc_num]);
             }
         } catch (PDOException $e) {
             error_log('Sit-in error: ' . $e->getMessage());
+            header('Location: admin_dashboard.php?page=sitin&msg=db_error'); exit;
         }
 
         header('Location: admin_dashboard.php?page=sitin&msg=sittin'); exit;
@@ -124,6 +141,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     // Logout a sit-in record
     if (isset($_POST['logout_sitin'])) {
+        $sitin = $pdo->prepare("SELECT laboratory, pc_number FROM sit_in_history WHERE id = ?");
+        $sitin->execute([(int)$_POST['sitin_id']]);
+        $sitinData = $sitin->fetch();
+        
+        if ($sitinData && $sitinData['pc_number']) {
+            $pdo->prepare("UPDATE computers SET status = 'available', current_student_id = NULL WHERE lab_room = ? AND pc_number = ?")
+                ->execute([$sitinData['laboratory'], $sitinData['pc_number']]);
+        }
+        
         $pdo->prepare("UPDATE sit_in_history SET logout_time = NOW() WHERE id = ? AND logout_time IS NULL")
             ->execute([(int)$_POST['sitin_id']]);
         header('Location: admin_dashboard.php?page=sitin&msg=logout'); exit;
@@ -133,7 +159,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (isset($_POST['approve_reservation'])) {
         $rid = (int)$_POST['reservation_id'];
         $pdo->prepare("UPDATE reservations SET status = 'approved' WHERE id = ?")->execute([$rid]);
-        // Notify student
         $rv = $pdo->prepare("SELECT * FROM reservations WHERE id = ? LIMIT 1");
         $rv->execute([$rid]);
         $rvRow = $rv->fetch();
@@ -156,6 +181,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 ->execute([$rvRow['student_id'], "Your reservation for Lab {$rvRow['laboratory']} on {$rvRow['date']} has been REJECTED."]);
         }
         header('Location: admin_dashboard.php?page=reservation&msg=rejected'); exit;
+    }
+
+    // Toggle reservations
+    if (isset($_POST['toggle_reservations'])) {
+        $stmt = $pdo->prepare("SELECT setting_value FROM settings WHERE setting_key = 'reservations_enabled'");
+        $stmt->execute();
+        $current = $stmt->fetchColumn();
+        $new_value = $current === '1' ? '0' : '1';
+        $pdo->prepare("UPDATE settings SET setting_value = ? WHERE setting_key = 'reservations_enabled'")
+            ->execute([$new_value]);
+        header('Location: admin_dashboard.php?page=reservation&msg=toggled');
+        exit;
     }
 }
 
@@ -197,11 +234,14 @@ $flash_map = [
     'all_reset'       => '✅ All sessions reset to 30.',
     'sittin'          => '✅ Student logged in successfully.',
     'logout'          => '✅ Student logged out.',
-    'sitin_err'       => '❌ Please fill in all required fields (ID, Name, Purpose, Lab).',
+    'sitin_err'       => '❌ Please fill in all required fields (ID, Name, Purpose, Lab, PC).',
     'no_session'      => '❌ Student has no remaining sessions.',
     'session_updated' => '✅ Session updated successfully.',
     'approved'        => '✅ Reservation approved.',
     'rejected'        => '✅ Reservation rejected.',
+    'toggled'         => '✅ Reservation status updated successfully.',
+    'pc_occupied'     => '❌ That PC is already occupied. Please select another.',
+    'db_error'        => '❌ Database error occurred. Please try again.',
 ];
 $flash_msg  = $flash_map[$_GET['msg'] ?? ''] ?? '';
 $flash_type = str_starts_with($flash_msg, '❌') ? 'error' : 'success';
@@ -216,6 +256,23 @@ $flash_type = str_starts_with($flash_msg, '❌') ? 'error' : 'success';
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <style>
 /* ── CSS Variables ── */
+:root {
+    --bg-color: #f7f8fa;
+    --text-color: #1e2a38;
+    --card-bg: #ffffff;
+    --nav-bg: #1e3a5f;
+    --border-color: #e2e6ea;
+    --shadow: 0 4px 12px rgba(0,0,0,0.08);
+}
+
+[data-theme="dark"] {
+    --bg-color: #1a1a2e;
+    --text-color: #e0e0e0;
+    --card-bg: #16213e;
+    --nav-bg: #0f0f1a;
+    --border-color: #2a2a4a;
+    --shadow: 0 4px 12px rgba(0,0,0,0.5);
+}
 :root {
   --blue:#1e3a5f;--blue-lt:#eef3f9;--blue-bd:#c5d5e8;--blue-dk:#1e2a38;
   --green:#276749;--green-lt:#f0fff4;--green-bd:#9ae6b4;
@@ -315,10 +372,14 @@ tbody td{padding:8px 11px;font-size:13px;color:var(--gray-600);}
     <a href="?page=students"    class="<?= $page==='students'    ?'active':'' ?>">Students</a>
     <a href="?page=sitin"       class="<?= $page==='sitin'       ?'active':'' ?>" onclick="this.href='?page=sitin'">Sit-in</a>
     <a href="?page=records"     class="<?= $page==='records'     ?'active':'' ?>">Sit-in Records</a>
+    <a href="?page=sessions"    class="<?= $page==='sessions'    ?'active':'' ?>">Sessions</a>
     <a href="?page=reports"     class="<?= $page==='reports'     ?'active':'' ?>">Reports</a>
     <a href="?page=reservation" class="<?= $page==='reservation' ?'active':'' ?>">Reservations</a>
     <a href="admin_feedback.php">View Student Feedback</a>
-    <a href="admin_logout.php" class="btn-logout-nav">Log out</a>
+    <button onclick="toggleDarkMode()" style="background:none;border:none;color:rgba(255,255,255,0.7);cursor:pointer;font-size:16px;padding:6px 10px;border-radius:5px;transition:all .15s;" onmouseover="this.style.background='rgba(255,255,255,0.1)'" onmouseout="this.style.background='none'">
+    🌙
+</button>
+    <a href="admin_logout.php" style="background:#dc3545;color:#fff;padding:5px 13px;border-radius:4px;font-size:12.5px;font-weight:600;text-decoration:none;margin-left:4px;">Log out</a>
   </div>
 </nav>
 
@@ -330,303 +391,714 @@ tbody td{padding:8px 11px;font-size:13px;color:var(--gray-600);}
 
 <!-- ════════════ HOME ════════════ -->
 <div id="page-home" class="page-section <?= $page==='home'?'active':'' ?>">
-  <div class="home-grid">
-    <!-- Stats + Chart -->
-    <div>
-      <div class="card">
-        <div class="card-head">
-          <h2>📊 Statistics</h2>
+    <div class="page-title" style="margin-bottom:28px;">
+        <div style="display:flex;align-items:center;justify-content:center;gap:12px;flex-wrap:wrap;">
+            <span style="font-size:24px;font-weight:800;color:#1e3a5f;">🏠 Admin Dashboard</span>
+            <span style="background:#eef3f9;color:#1e3a5f;padding:4px 14px;border-radius:20px;font-size:12px;font-weight:600;">Overview</span>
         </div>
-        <div class="stat-row">
-          <div class="stat-item">
-            <div class="stat-icon-box stat-icon-blue">
-              <svg viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
-            </div>
-            <span><strong>Students Registered:</strong> <?= $total_students ?></span>
-          </div>
-          <div class="stat-item">
-            <div class="stat-icon-box stat-icon-green">
-              <svg viewBox="0 0 24 24"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
-            </div>
-            <span><strong>Currently Sitting In:</strong> <?= $currently_sitin ?></span>
-          </div>
-          <div class="stat-item">
-            <div class="stat-icon-box stat-icon-orange">
-              <svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/></svg>
-            </div>
-            <span><strong>Total Sit-in Records:</strong> <?= $total_sitin ?></span>
-          </div>
-        </div>
-        <div class="chart-wrap">
-          <canvas id="purposeChart"></canvas>
-        </div>
-      </div>
+        <span style="display:block;font-size:13px;font-weight:400;color:#7a8a9e;margin-top:4px;">Monitor sit-in activity, student statistics, and announcements</span>
     </div>
-
-    <!-- Announcements -->
-    <div>
-      <div class="card">
-        <div class="card-head"><h2>📢 Announcement</h2></div>
-        <div class="ann-form">
-          <form method="POST">
-            <textarea name="content" placeholder="Write a new announcement..."></textarea>
-            <button type="submit" name="add_announcement" class="btn-submit">Post Announcement</button>
-          </form>
+    
+    <div class="home-grid" style="display:grid;grid-template-columns:1fr 1fr;gap:20px;max-width:1200px;margin:0 auto;">
+        
+        <!-- STATISTICS CARD -->
+        <div class="card" style="border-radius:12px;box-shadow:0 4px 12px rgba(0,0,0,0.08);overflow:hidden;border:none;">
+            <div class="card-head" style="background:linear-gradient(135deg, #1e3a5f, #2a5a8a);padding:14px 18px;">
+                <div style="display:flex;align-items:center;gap:8px;">
+                    <span style="font-size:18px;">📊</span>
+                    <h2 style="color:#fff;font-size:14px;font-weight:700;text-transform:uppercase;letter-spacing:0.05em;">Statistics</h2>
+                </div>
+            </div>
+            
+            <div class="stat-row" style="padding:18px 20px;display:flex;flex-direction:column;gap:12px;">
+                <div class="stat-item" style="display:flex;align-items:center;gap:14px;padding:10px 14px;background:#f8f9fa;border-radius:8px;border-left:4px solid #1e3a5f;">
+                    <div class="stat-icon-box stat-icon-blue" style="width:40px;height:40px;border-radius:8px;display:flex;align-items:center;justify-content:center;background:#eef3f9;">
+                        <svg viewBox="0 0 24 24" width="20" height="20" stroke="#1e3a5f" fill="none" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+                    </div>
+                    <div>
+                        <div style="font-size:12px;color:#4a5568;font-weight:500;">Registered Students</div>
+                        <div style="font-size:22px;font-weight:700;color:#1e3a5f;"><?= $total_students ?></div>
+                    </div>
+                </div>
+                
+                <div class="stat-item" style="display:flex;align-items:center;gap:14px;padding:10px 14px;background:#f8f9fa;border-radius:8px;border-left:4px solid #28a745;">
+                    <div class="stat-icon-box stat-icon-green" style="width:40px;height:40px;border-radius:8px;display:flex;align-items:center;justify-content:center;background:#f0fff4;">
+                        <svg viewBox="0 0 24 24" width="20" height="20" stroke="#28a745" fill="none" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+                    </div>
+                    <div>
+                        <div style="font-size:12px;color:#4a5568;font-weight:500;">Currently Sitting In</div>
+                        <div style="font-size:22px;font-weight:700;color:#28a745;"><?= $currently_sitin ?></div>
+                    </div>
+                </div>
+                
+                <div class="stat-item" style="display:flex;align-items:center;gap:14px;padding:10px 14px;background:#f8f9fa;border-radius:8px;border-left:4px solid #e67e22;">
+                    <div class="stat-icon-box stat-icon-orange" style="width:40px;height:40px;border-radius:8px;display:flex;align-items:center;justify-content:center;background:#fff8f0;">
+                        <svg viewBox="0 0 24 24" width="20" height="20" stroke="#e67e22" fill="none" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/></svg>
+                    </div>
+                    <div>
+                        <div style="font-size:12px;color:#4a5568;font-weight:500;">Total Sit-in Records</div>
+                        <div style="font-size:22px;font-weight:700;color:#e67e22;"><?= $total_sitin ?></div>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="chart-wrap" style="padding:10px 16px 16px;display:flex;justify-content:center;">
+                <canvas id="purposeChart" style="max-width:280px;max-height:280px;"></canvas>
+            </div>
         </div>
-        <div class="ann-posted-title">Posted Announcements</div>
-        <?php foreach ($announcements as $ann): ?>
-        <div class="ann-item">
-          <div class="ann-meta">
-            <?= htmlspecialchars($ann['admin_name']) ?> | <?= date('M d, Y', strtotime($ann['created_at'])) ?>
-            <form method="POST" style="display:inline;float:right;">
-              <input type="hidden" name="ann_id" value="<?= $ann['id'] ?>"/>
-              <button type="submit" name="delete_announcement" class="btn btn-sm btn-red" onclick="return confirm('Delete this announcement?')">✕</button>
-            </form>
-          </div>
-          <?php if ($ann['content']): ?>
-            <div class="ann-content"><?= htmlspecialchars($ann['content']) ?></div>
-          <?php endif; ?>
+        
+        <!-- ANNOUNCEMENTS CARD -->
+        <div class="card" style="border-radius:12px;box-shadow:0 4px 12px rgba(0,0,0,0.08);overflow:hidden;border:none;">
+            <div class="card-head" style="background:linear-gradient(135deg, #1e3a5f, #2a5a8a);padding:14px 18px;">
+                <div style="display:flex;align-items:center;gap:8px;">
+                    <span style="font-size:18px;">📢</span>
+                    <h2 style="color:#fff;font-size:14px;font-weight:700;text-transform:uppercase;letter-spacing:0.05em;">Announcements</h2>
+                </div>
+            </div>
+            
+            <div class="ann-form" style="padding:16px 18px;border-bottom:1px solid #eef0f3;">
+                <form method="POST">
+                    <textarea name="content" placeholder="Write a new announcement..." style="width:100%;padding:10px 12px;border:1px solid #d0d7e2;border-radius:8px;font-family:'Plus Jakarta Sans',sans-serif;font-size:13px;resize:vertical;min-height:80px;outline:none;transition:border-color 0.2s;" onfocus="this.style.borderColor='#1e3a5f'" onblur="this.style.borderColor='#d0d7e2'"></textarea>
+                    <button type="submit" name="add_announcement" style="padding:8px 20px;border:none;border-radius:6px;background:#28a745;color:#fff;font-size:13px;font-weight:600;font-family:'Plus Jakarta Sans',sans-serif;cursor:pointer;transition:all 0.2s;margin-top:8px;" onmouseover="this.style.background='#218838'" onmouseout="this.style.background='#28a745'">
+                        ➕ Post Announcement
+                    </button>
+                </form>
+            </div>
+            
+            <div class="ann-posted-title" style="padding:12px 18px 4px;font-size:13px;font-weight:700;color:#1e3a5f;">📋 Recent Announcements</div>
+            
+            <div class="ann-scroll" style="max-height:400px;overflow-y:auto;">
+                <?php if ($announcements): foreach ($announcements as $ann): ?>
+                <div class="ann-item" style="padding:12px 18px;border-bottom:1px solid #f0f2f5;transition:background 0.2s;" onmouseover="this.style.background='#f8f9fa'" onmouseout="this.style.background=''">
+                    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;">
+                        <div style="font-size:12px;font-weight:600;color:#1e3a5f;">
+                            <?= htmlspecialchars($ann['admin_name']) ?>
+                            <span style="font-weight:400;color:#9aa5b4;font-size:11px;">| <?= date('M d, Y', strtotime($ann['created_at'])) ?></span>
+                        </div>
+                        <form method="POST" style="display:inline;">
+                            <input type="hidden" name="ann_id" value="<?= $ann['id'] ?>"/>
+                            <button type="submit" name="delete_announcement" style="padding:2px 8px;border-radius:4px;font-size:11px;font-weight:600;cursor:pointer;border:none;background:#dc3545;color:#fff;transition:all 0.2s;" onmouseover="this.style.background='#c82333'" onmouseout="this.style.background='#dc3545'" onclick="return confirm('Delete this announcement?')">
+                                ✕
+                            </button>
+                        </form>
+                    </div>
+                    <?php if ($ann['content']): ?>
+                        <div style="font-size:13px;color:#4a5568;line-height:1.6;"><?= htmlspecialchars($ann['content']) ?></div>
+                    <?php endif; ?>
+                </div>
+                <?php endforeach; else: ?>
+                <div style="padding:20px;text-align:center;color:#9aa5b4;font-size:13px;">No announcements yet.</div>
+                <?php endif; ?>
+            </div>
         </div>
-        <?php endforeach; ?>
-        <?php if (!$announcements): ?>
-          <div class="ann-item"><span style="color:var(--gray-400);font-size:13px;">No announcements yet.</span></div>
-        <?php endif; ?>
-      </div>
+        
     </div>
-  </div>
 </div>
 
 <!-- ════════════ STUDENTS ════════════ -->
 <div id="page-students" class="page-section <?= $page==='students'?'active':'' ?>">
-  <div class="page-title">Students Information</div>
-  <div class="toolbar">
-    <button class="btn btn-blue" onclick="openModal('addStudentModal')">+ Add Student</button>
-    <form method="POST" style="display:inline;" onsubmit="return confirm('Reset ALL student sessions to 30?')">
-      <button type="submit" name="reset_all_sessions" class="btn btn-red">Reset All Sessions</button>
-    </form>
-    <div class="toolbar-right">
-      <select class="entries-select"><option>10</option><option>25</option><option>50</option><option>100</option></select>
-      <span style="font-size:13px;color:var(--gray-600);">entries</span>
-      <span style="font-size:13px;color:var(--gray-600);margin-left:8px;">Search:</span>
-      <input type="text" class="search-input" id="studentSearch" oninput="filterTable('studentTable',this.value)" placeholder=""/>
+    <div class="page-title" style="margin-bottom:28px;">
+        <div style="display:flex;align-items:center;justify-content:center;gap:12px;flex-wrap:wrap;">
+            <span style="font-size:24px;font-weight:800;color:#1e3a5f;">👨‍🎓 Students Information</span>
+            <span style="background:#eef3f9;color:#1e3a5f;padding:4px 14px;border-radius:20px;font-size:12px;font-weight:600;"><?= count($students) ?> total</span>
+        </div>
+        <span style="display:block;font-size:13px;font-weight:400;color:#7a8a9e;margin-top:4px;">Manage student accounts and their remaining sessions</span>
     </div>
-  </div>
-  <div class="card">
-    <div class="table-wrap">
-      <table id="studentTable">
-        <thead>
-          <tr>
-            <th>ID Number</th><th>Name</th><th>Year</th><th>Course</th><th>Sessions Left</th><th>Actions</th>
-          </tr>
-        </thead>
-        <tbody>
-          <?php if ($students): foreach ($students as $s): ?>
-          <tr>
-            <td><?= htmlspecialchars($s['id_number']) ?></td>
-            <td><?= htmlspecialchars($s['firstname'].' '.$s['middlename'].' '.$s['lastname']) ?></td>
-            <td><?= htmlspecialchars($s['year_level']) ?></td>
-            <td><?= htmlspecialchars($s['course']) ?></td>
-            <td>
-              <span style="font-weight:700;color:<?= $s['session']<=5?'#dc2626':($s['session']<=10?'#ea580c':'#16a34a'); ?>">
-                <?= htmlspecialchars($s['session']) ?>
-              </span> / 30
-            </td>
-            <td style="display:flex;gap:5px;flex-wrap:wrap;">
-              <button class="btn btn-blue btn-sm"
-                onclick="openEditStudent(<?= $s['id'] ?>,'<?= addslashes($s['id_number']) ?>','<?= addslashes($s['firstname']) ?>','<?= addslashes($s['middlename']) ?>','<?= addslashes($s['lastname']) ?>','<?= addslashes($s['course']) ?>','<?= $s['year_level'] ?>','<?= addslashes($s['email']) ?>','<?= (int)$s['session'] ?>')">Edit</button>
-              <form method="POST" style="display:inline;">
-                <input type="hidden" name="student_id" value="<?= $s['id'] ?>"/>
-                <button type="submit" name="delete_student" class="btn btn-red btn-sm" onclick="return confirm('Delete this student?')">Delete</button>
-              </form>
-            </td>
-          </tr>
-          <?php endforeach; else: ?>
-          <tr><td colspan="6" class="no-data">No students registered yet.</td></tr>
-          <?php endif; ?>
-        </tbody>
-      </table>
+    
+    <div class="toolbar" style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;flex-wrap:wrap;gap:10px;background:#fff;padding:12px 16px;border-radius:8px;border:1px solid #e2e6ea;max-width:1200px;margin-left:auto;margin-right:auto;">
+        <div style="display:flex;align-items:center;gap:10px;font-size:13px;color:var(--gray-600);flex-wrap:wrap;">
+            <button class="btn btn-blue" onclick="openModal('addStudentModal')" style="padding:8px 16px;border-radius:6px;font-size:13px;font-weight:600;cursor:pointer;border:none;background:#1e3a5f;color:#fff;transition:all 0.2s;" onmouseover="this.style.background='#16304f'" onmouseout="this.style.background='#1e3a5f'">
+                ➕ Add Student
+            </button>
+            <a href="import_students.php" style="padding:8px 16px;border-radius:6px;font-size:13px;font-weight:600;text-decoration:none;display:inline-flex;align-items:center;gap:6px;background:#2563a8;color:#fff;transition:all 0.2s;" onmouseover="this.style.background='#1d4f8a';this.style.transform='translateY(-1px)';" onmouseout="this.style.background='#2563a8';this.style.transform='translateY(0)';">
+    📤 Import Students
+</a>
+            <form method="POST" style="display:inline;" onsubmit="return confirm('Reset ALL student sessions to 30?')">
+                <button type="submit" name="reset_all_sessions" style="padding:8px 16px;border-radius:6px;font-size:13px;font-weight:600;cursor:pointer;border:none;background:#dc3545;color:#fff;transition:all 0.2s;" onmouseover="this.style.background='#c82333';this.style.transform='translateY(-1px)';" onmouseout="this.style.background='#dc3545';this.style.transform='translateY(0)';">
+                    🔄 Reset All Sessions
+                </button>
+            </form>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px;font-size:13px;color:var(--gray-600);">
+            <span style="font-weight:600;color:#1e3a5f;">🔍 Search:</span>
+            <input type="text" class="search-input" id="studentSearch" oninput="filterTable('studentTable',this.value)" placeholder="Type to filter..." style="padding:6px 12px;border:1px solid #d0d7e2;border-radius:6px;font-size:13px;width:200px;outline:none;transition:border-color 0.2s;" onfocus="this.style.borderColor='#1e3a5f'" onblur="this.style.borderColor='#d0d7e2'"/>
+        </div>
     </div>
-  </div>
+    
+    <div class="card" style="border-radius:12px;box-shadow:0 4px 12px rgba(0,0,0,0.08);overflow:hidden;border:none;max-width:1200px;margin-left:auto;margin-right:auto;">
+        <div class="table-wrap" style="padding:0;">
+            <table id="studentTable" style="width:100%;border-collapse:collapse;">
+                <thead>
+                    <tr style="background:linear-gradient(135deg, #1e3a5f, #2a5a8a);color:#fff;">
+                        <th style="padding:14px 16px;text-align:left;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;border-right:1px solid rgba(255,255,255,0.05);">ID Number</th>
+                        <th style="padding:14px 16px;text-align:left;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;border-right:1px solid rgba(255,255,255,0.05);">Name</th>
+                        <th style="padding:14px 16px;text-align:left;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;border-right:1px solid rgba(255,255,255,0.05);">Year</th>
+                        <th style="padding:14px 16px;text-align:left;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;border-right:1px solid rgba(255,255,255,0.05);">Course</th>
+                        <th style="padding:14px 16px;text-align:left;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;border-right:1px solid rgba(255,255,255,0.05);">Sessions Left</th>
+                        <th style="padding:14px 16px;text-align:left;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;">Actions</th>
+                    </tr>
+                </thead>
+                <tbody id="studentTable">
+                    <?php if ($students): foreach ($students as $s): ?>
+                    <tr style="border-bottom:1px solid #eef0f3;transition:all 0.2s;cursor:default;background:<?= $cnt % 2 === 0 ? '#fafbfc' : '#ffffff' ?>;" onmouseover="this.style.background='#f0f4f9';this.style.transform='scale(1.002)';" onmouseout="this.style.background='<?= $cnt % 2 === 0 ? '#fafbfc' : '#ffffff' ?>';this.style.transform='scale(1)';">
+                        <td style="padding:12px 16px;font-size:13px;color:#1e3a5f;font-weight:600;font-family:monospace;"><?= htmlspecialchars($s['id_number']) ?></td>
+                        <td style="padding:12px 16px;font-size:13px;color:#1e2a38;font-weight:500;">
+                            <?= htmlspecialchars($s['firstname'].' '.$s['middlename'].' '.$s['lastname']) ?>
+                        </td>
+                        <td style="padding:12px 16px;font-size:13px;color:#4a5568;font-weight:500;">
+                            <span style="display:inline-block;background:#e8edf5;padding:3px 10px;border-radius:6px;font-size:12px;"><?= htmlspecialchars($s['year_level']) ?></span>
+                        </td>
+                        <td style="padding:12px 16px;font-size:13px;color:#4a5568;font-weight:500;">
+                            <span style="display:inline-block;background:#e8edf5;padding:3px 10px;border-radius:6px;font-size:12px;"><?= htmlspecialchars($s['course']) ?></span>
+                        </td>
+                        <td style="padding:12px 16px;font-size:13px;color:#4a5568;font-weight:500;">
+                            <?php $sessColor = $s['session'] <= 5 ? '#dc2626' : ($s['session'] <= 10 ? '#ea580c' : '#16a34a'); ?>
+                            <span style="display:inline-block;background:#e8edf5;padding:3px 10px;border-radius:14px;font-size:12px;font-weight:500;color:<?= $sessColor ?>;">
+                                <?= htmlspecialchars($s['session']) ?> / 30
+                            </span>
+                        </td>
+                        <td style="padding:12px 16px;display:flex;gap:6px;flex-wrap:wrap;">
+                            <button class="btn btn-blue btn-sm" style="padding:4px 12px;border-radius:4px;font-size:11px;font-weight:500;cursor:pointer;border:none;background:#1e3a5f;color:#fff;transition:all 0.2s;" onmouseover="this.style.background='#16304f';this.style.transform='translateY(-1px)';" onmouseout="this.style.background='#1e3a5f';this.style.transform='translateY(0)';" onclick="openEditStudent(<?= $s['id'] ?>,'<?= addslashes($s['id_number']) ?>','<?= addslashes($s['firstname']) ?>','<?= addslashes($s['middlename']) ?>','<?= addslashes($s['lastname']) ?>','<?= addslashes($s['course']) ?>','<?= $s['year_level'] ?>','<?= addslashes($s['email']) ?>','<?= (int)$s['session'] ?>')">
+                                ✏️ Edit
+                            </button>
+                            <form method="POST" style="display:inline;">
+                                <input type="hidden" name="student_id" value="<?= $s['id'] ?>"/>
+                                <button type="submit" name="delete_student" style="padding:4px 12px;border-radius:4px;font-size:11px;font-weight:500;cursor:pointer;border:none;background:#dc3545;color:#fff;transition:all 0.2s;" onmouseover="this.style.background='#c82333';this.style.transform='translateY(-1px)';" onmouseout="this.style.background='#dc3545';this.style.transform='translateY(0)';" onclick="return confirm('Delete this student?')">
+                                    🗑️ Delete
+                                </button>
+                            </form>
+                        </td>
+                    </tr>
+                    <?php endforeach; else: ?>
+                    <tr><td colspan="6" style="padding:40px;text-align:center;color:#9aa5b4;font-size:14px;font-style:italic;">👨‍🎓 No students registered yet.</td></tr>
+                    <?php endif; ?>
+                </tbody>
+            </table>
+        </div>
+        <div style="padding:14px 18px;border-top:1px solid #eef0f3;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;background:#fafbfc;">
+            <span style="font-size:12.5px;color:var(--gray-400);font-weight:500;">Showing <?= count($students) ?> student<?= count($students)!==1?'s':'' ?></span>
+            <div style="display:flex;align-items:center;gap:3px;">
+                <!-- Pagination buttons can go here if needed -->
+            </div>
+        </div>
+    </div>
 </div>
 
 <!-- ════════════ SIT-IN ════════════ -->
 <div id="page-sitin" class="page-section <?= $page==='sitin'?'active':'' ?>">
-  <div class="page-title">Current Sit-in</div>
-  <div class="toolbar">
-    <button class="btn btn-blue" onclick="openBlankSitin()">+ Sit In Student</button>
-    <div class="toolbar-right">
-      <span style="font-size:13px;color:var(--gray-600);">Search:</span>
-      <input type="text" class="search-input" oninput="filterTable('sitinTable',this.value)" placeholder=""/>
+    <div class="page-title" style="margin-bottom:28px;">
+        <div style="display:flex;align-items:center;justify-content:center;gap:12px;flex-wrap:wrap;">
+            <span style="font-size:24px;font-weight:800;color:#1e3a5f;">🖥️ Current Sit-in</span>
+            <span style="background:#eef3f9;color:#1e3a5f;padding:4px 14px;border-radius:20px;font-size:12px;font-weight:600;"><?= count($current_sitin) ?> active</span>
+        </div>
+        <span style="display:block;font-size:13px;font-weight:400;color:#7a8a9e;margin-top:4px;">Students currently sitting in the laboratory</span>
     </div>
-  </div>
-  <div class="card">
-    <div class="table-wrap">
-      <table id="sitinTable">
-        <thead>
-          <tr><th>ID Number</th><th>Name</th><th>Purpose</th><th>Lab</th><th>Login Time</th><th>Sessions Left</th><th>Status</th><th>Actions</th></tr>
-        </thead>
-        <tbody>
-          <?php if ($current_sitin): foreach ($current_sitin as $si):
-            $stuStmt = $pdo->prepare("SELECT id, session FROM students WHERE id_number = ? LIMIT 1");
-            $stuStmt->execute([$si['id_number']]);
-            $stuRow = $stuStmt->fetch();
-            $sessNum = $stuRow ? (int)$stuRow['session'] : null;
-            $stuDbId = $stuRow ? (int)$stuRow['id'] : 0;
-            $sessColor = $sessNum !== null ? ($sessNum <= 5 ? '#dc2626' : ($sessNum <= 10 ? '#ea580c' : '#16a34a')) : '';
-          ?>
-          <tr>
-            <td><?= htmlspecialchars($si['id_number']) ?></td>
-            <td><?= htmlspecialchars($si['fullname']) ?></td>
-            <td><?= htmlspecialchars($si['sit_purpose']) ?></td>
-            <td><?= htmlspecialchars($si['laboratory']) ?></td>
-            <td><?= htmlspecialchars($si['login_time'] ?? '—') ?></td>
-            <td>
-              <?php if ($sessNum !== null): ?>
-                <span style="font-weight:700;color:<?= $sessColor ?>;"><?= $sessNum ?></span>
-                <span style="font-size:11px;color:var(--gray-400);"> / 30</span>
-              <?php else: ?>
-                <span style="color:var(--gray-400);font-size:12px;">Walk-in</span>
-              <?php endif; ?>
-            </td>
-            <td><span class="badge badge-approved">Active</span></td>
-            <td style="display:flex;gap:5px;flex-wrap:wrap;">
-              <?php if ($stuDbId > 0): ?>
-                <button class="btn btn-blue btn-sm"
-                  onclick="openEditSession(<?= $stuDbId ?>,'<?= addslashes($si['fullname']) ?>','<?= $sessNum ?>')">
-                  Edit Session
-                </button>
-              <?php endif; ?>
-              <form method="POST" style="display:inline;">
-                <input type="hidden" name="sitin_id" value="<?= $si['id'] ?>"/>
-                <button type="submit" name="logout_sitin" class="btn btn-red btn-sm"
-                  onclick="return confirm('Log out this student?')">Log Out</button>
-              </form>
-            </td>
-          </tr>
-          <?php endforeach; else: ?>
-          <tr><td colspan="8" class="no-data">No students currently sitting in.</td></tr>
-          <?php endif; ?>
-        </tbody>
-      </table>
+    
+    <div class="toolbar" style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;flex-wrap:wrap;gap:10px;background:#fff;padding:12px 16px;border-radius:8px;border:1px solid #e2e6ea;max-width:1200px;margin-left:auto;margin-right:auto;">
+        <div style="display:flex;align-items:center;gap:10px;font-size:13px;color:var(--gray-600);flex-wrap:wrap;">
+            <button class="btn btn-blue" onclick="openBlankSitin()" style="padding:8px 16px;border-radius:6px;font-size:13px;font-weight:600;cursor:pointer;border:none;background:#1e3a5f;color:#fff;transition:all 0.2s;" onmouseover="this.style.background='#16304f'" onmouseout="this.style.background='#1e3a5f'">
+                ➕ Sit In Student
+            </button>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px;font-size:13px;color:var(--gray-600);">
+            <span style="font-weight:600;color:#1e3a5f;">🔍 Search:</span>
+            <input type="text" class="search-input" oninput="filterTable('sitinTable',this.value)" placeholder="Type to filter..." style="padding:6px 12px;border:1px solid #d0d7e2;border-radius:6px;font-size:13px;width:200px;outline:none;transition:border-color 0.2s;" onfocus="this.style.borderColor='#1e3a5f'" onblur="this.style.borderColor='#d0d7e2'"/>
+        </div>
     </div>
-    <div style="padding:10px 14px;font-size:12px;color:var(--gray-400);display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;">
-      <span>Showing <?= count($current_sitin) ?> active sit-in<?= count($current_sitin)!==1?'s':'' ?></span>
-      <span style="display:flex;align-items:center;gap:12px;">
-        <span><span style="color:#16a34a;font-weight:700;">●</span> &gt;10 sessions</span>
-        <span><span style="color:#ea580c;font-weight:700;">●</span> 6–10 sessions</span>
-        <span><span style="color:#dc2626;font-weight:700;">●</span> ≤5 sessions</span>
-      </span>
+    
+    <div class="card" style="border-radius:12px;box-shadow:0 4px 12px rgba(0,0,0,0.08);overflow:hidden;border:none;max-width:1200px;margin-left:auto;margin-right:auto;">
+        <div class="table-wrap" style="padding:0;">
+            <table id="sitinTable" style="width:100%;border-collapse:collapse;">
+                <thead>
+                    <tr style="background:linear-gradient(135deg, #1e3a5f, #2a5a8a);color:#fff;">
+                        <th style="padding:14px 16px;text-align:left;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;border-right:1px solid rgba(255,255,255,0.05);">ID Number</th>
+                        <th style="padding:14px 16px;text-align:left;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;border-right:1px solid rgba(255,255,255,0.05);">Name</th>
+                        <th style="padding:14px 16px;text-align:left;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;border-right:1px solid rgba(255,255,255,0.05);">Purpose</th>
+                        <th style="padding:14px 16px;text-align:left;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;border-right:1px solid rgba(255,255,255,0.05);">Lab</th>
+                        <th style="padding:14px 16px;text-align:left;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;border-right:1px solid rgba(255,255,255,0.05);">Login Time</th>
+                        <th style="padding:14px 16px;text-align:left;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;border-right:1px solid rgba(255,255,255,0.05);">Sessions Left</th>
+                        <th style="padding:14px 16px;text-align:left;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;border-right:1px solid rgba(255,255,255,0.05);">Status</th>
+                        <th style="padding:14px 16px;text-align:left;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;">Actions</th>
+                    </tr>
+                </thead>
+                <tbody id="sitinTable">
+                    <?php if ($current_sitin): foreach ($current_sitin as $si):
+                        $stuStmt = $pdo->prepare("SELECT id, session FROM students WHERE id_number = ? LIMIT 1");
+                        $stuStmt->execute([$si['id_number']]);
+                        $stuRow = $stuStmt->fetch();
+                        $sessNum = $stuRow ? (int)$stuRow['session'] : null;
+                        $stuDbId = $stuRow ? (int)$stuRow['id'] : 0;
+                        $sessColor = $sessNum !== null ? ($sessNum <= 5 ? '#dc2626' : ($sessNum <= 10 ? '#ea580c' : '#16a34a')) : '';
+                    ?>
+                    <tr style="border-bottom:1px solid #eef0f3;transition:all 0.2s;cursor:default;background:<?= $cnt % 2 === 0 ? '#fafbfc' : '#ffffff' ?>;" onmouseover="this.style.background='#f0f4f9';this.style.transform='scale(1.002)';" onmouseout="this.style.background='<?= $cnt % 2 === 0 ? '#fafbfc' : '#ffffff' ?>';this.style.transform='scale(1)';">
+                        <td style="padding:12px 16px;font-size:13px;color:#1e3a5f;font-weight:600;font-family:monospace;"><?= htmlspecialchars($si['id_number']) ?></td>
+                        <td style="padding:12px 16px;font-size:13px;color:#1e2a38;font-weight:500;">
+                            <?= htmlspecialchars($si['fullname']) ?>
+                        </td>
+                        <td style="padding:12px 16px;font-size:13px;color:#4a5568;">
+                            <span style="display:inline-block;background:#e8edf5;color:#1e3a5f;padding:3px 12px;border-radius:14px;font-size:12px;font-weight:500;"><?= htmlspecialchars($si['sit_purpose']) ?></span>
+                        </td>
+                        <td style="padding:12px 16px;font-size:13px;color:#4a5568;font-weight:600;">
+                            <span style="display:inline-block;background:#e8edf5;padding:3px 10px;border-radius:6px;font-size:12px;"><?= htmlspecialchars($si['laboratory']) ?></span>
+                        </td>
+                        <td style="padding:12px 16px;font-size:13px;color:#4a5568;font-weight:500;font-family:monospace;">
+                            <?php if (!empty($si['login_time'])): ?>
+                                <?= date('h:i A', strtotime($si['login_time'])) ?>
+                            <?php else: ?>
+                                <span style="color:#c0c8d4;">—</span>
+                            <?php endif; ?>
+                        </td>
+                        <td style="padding:12px 16px;font-size:13px;color:#4a5568;font-weight:500;">
+                            <?php if ($sessNum !== null): ?>
+                                <span style="display:inline-block;background:#e8edf5;padding:3px 10px;border-radius:14px;font-size:12px;font-weight:500;color:<?= $sessColor ?>;">
+                                    <?= $sessNum ?> / 30
+                                </span>
+                            <?php else: ?>
+                                <span style="color:#c0c8d4;">—</span>
+                            <?php endif; ?>
+                        </td>
+                        <td style="padding:12px 16px;">
+                            <span style="display:inline-flex;align-items:center;gap:4px;padding:4px 14px;border-radius:20px;font-size:11px;font-weight:600;background:#d4edda;color:#155724;border:1px solid #b7ebc5;">
+                                <span style="width:8px;height:8px;background:#28a745;border-radius:50%;display:inline-block;"></span>
+                                Active
+                            </span>
+                        </td>
+                        <td style="padding:12px 16px;display:flex;gap:6px;flex-wrap:wrap;">
+                            <?php if ($stuDbId > 0): ?>
+                                <button class="btn btn-blue btn-sm" style="padding:4px 12px;border-radius:4px;font-size:11px;font-weight:500;cursor:pointer;border:none;background:#1e3a5f;color:#fff;transition:all 0.2s;" onmouseover="this.style.background='#16304f';this.style.transform='translateY(-1px)';" onmouseout="this.style.background='#1e3a5f';this.style.transform='translateY(0)';" onclick="openEditSession(<?= $stuDbId ?>,'<?= addslashes($si['fullname']) ?>','<?= $sessNum ?>')">
+                                    ✏️ Edit Session
+                                </button>
+                            <?php endif; ?>
+                            <form method="POST" style="display:inline;">
+                                <input type="hidden" name="sitin_id" value="<?= $si['id'] ?>"/>
+                                <button type="submit" name="logout_sitin" style="padding:4px 12px;border-radius:4px;font-size:11px;font-weight:500;cursor:pointer;border:none;background:#dc3545;color:#fff;transition:all 0.2s;" onmouseover="this.style.background='#c82333';this.style.transform='translateY(-1px)';" onmouseout="this.style.background='#dc3545';this.style.transform='translateY(0)';" onclick="return confirm('Log out this student?')">
+                                    ⏹ Log Out
+                                </button>
+                            </form>
+                        </td>
+                    </tr>
+                    <?php endforeach; else: ?>
+                    <tr><td colspan="8" style="padding:40px;text-align:center;color:#9aa5b4;font-size:14px;font-style:italic;">🖥️ No students currently sitting in.</td></tr>
+                    <?php endif; ?>
+                </tbody>
+            </table>
+        </div>
+        <div style="padding:14px 18px;border-top:1px solid #eef0f3;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;background:#fafbfc;">
+            <span style="font-size:12.5px;color:var(--gray-400);font-weight:500;">Showing <?= count($current_sitin) ?> active sit-in<?= count($current_sitin)!==1?'s':'' ?></span>
+            <div style="display:flex;align-items:center;gap:12px;font-size:12px;color:#4a5568;">
+                <span><span style="color:#16a34a;font-weight:700;">●</span> &gt;10 sessions</span>
+                <span><span style="color:#ea580c;font-weight:700;">●</span> 6–10 sessions</span>
+                <span><span style="color:#dc2626;font-weight:700;">●</span> ≤5 sessions</span>
+            </div>
+        </div>
     </div>
-  </div>
 </div>
 
 <!-- ════════════ RECORDS ════════════ -->
 <div id="page-records" class="page-section <?= $page==='records'?'active':'' ?>">
-  <div class="page-title">All Sit-in Records</div>
-  <div class="toolbar">
-    <div style="display:flex;align-items:center;gap:8px;">
-      <select class="entries-select" id="recordsEntries" onchange="paginateRecords()">
-        <option value="10">10</option><option value="25">25</option><option value="50">50</option><option value="100">100</option>
-      </select>
-      <span style="font-size:13px;color:var(--gray-600);">entries per page</span>
+    <div class="page-title" style="margin-bottom:28px;">
+        <div style="display:flex;align-items:center;justify-content:center;gap:12px;flex-wrap:wrap;">
+            <span style="font-size:24px;font-weight:800;color:#1e3a5f;">📊 All Sit-in Records</span>
+            <span style="background:#eef3f9;color:#1e3a5f;padding:4px 14px;border-radius:20px;font-size:12px;font-weight:600;"><?= count($all_sitin) ?> total</span>
+        </div>
+        <span style="display:block;font-size:13px;font-weight:400;color:#7a8a9e;margin-top:4px;">Complete history of all sit-in sessions with detailed tracking</span>
     </div>
-    <div class="toolbar-right">
-      <span style="font-size:13px;color:var(--gray-600);">Search:</span>
-      <input type="text" class="search-input" id="recordsSearch" oninput="filterRecords(this.value)" placeholder=""/>
+    
+    <div class="toolbar" style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;flex-wrap:wrap;gap:10px;background:#fff;padding:12px 16px;border-radius:8px;border:1px solid #e2e6ea;max-width:1200px;margin-left:auto;margin-right:auto;">
+        <div style="display:flex;align-items:center;gap:10px;font-size:13px;color:var(--gray-600);flex-wrap:wrap;">
+            <span style="font-weight:600;color:#1e3a5f;">Show</span>
+            <select class="entries-select" id="recordsEntries" onchange="paginateRecords()" style="padding:5px 10px;border:1px solid #d0d7e2;border-radius:6px;font-size:13px;background:#fff;font-weight:500;">
+                <option value="10">10</option>
+                <option value="25">25</option>
+                <option value="50">50</option>
+                <option value="100">100</option>
+            </select>
+            <span>entries</span>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px;font-size:13px;color:var(--gray-600);">
+            <span style="font-weight:600;color:#1e3a5f;">🔍 Search:</span>
+            <input type="text" class="search-input" id="recordsSearch" oninput="filterRecords(this.value)" placeholder="Type to filter..." style="padding:6px 12px;border:1px solid #d0d7e2;border-radius:6px;font-size:13px;width:200px;outline:none;transition:border-color 0.2s;" onfocus="this.style.borderColor='#1e3a5f'" onblur="this.style.borderColor='#d0d7e2'"/>
+        </div>
     </div>
-  </div>
-  <div class="card">
-    <div class="table-wrap">
-      <table id="recordsTable">
-        <thead>
-          <tr><th>#</th><th>ID Number</th><th>Name</th><th>Purpose</th><th>Lab</th><th>Login</th><th>Logout</th><th>Date</th><th>Status</th><th>Action</th></tr>
-        </thead>
-        <tbody id="recordsBody">
-          <?php if ($all_sitin): $cnt=0; foreach ($all_sitin as $r): $cnt++;
-            $isActive = empty($r['logout_time']); ?>
-          <tr>
-            <td><?= $cnt ?></td>
-            <td><?= htmlspecialchars($r['id_number']) ?></td>
-            <td><?= htmlspecialchars($r['fullname']) ?></td>
-            <td><?= htmlspecialchars($r['sit_purpose']) ?></td>
-            <td><?= htmlspecialchars($r['laboratory']) ?></td>
-            <td><?= htmlspecialchars($r['login_time'] ?? '—') ?></td>
-            <td><?= htmlspecialchars($r['logout_time'] ?? '—') ?></td>
-            <td><?= htmlspecialchars($r['date']) ?></td>
-            <td>
-              <?php if ($isActive): ?>
-                <span class="badge badge-approved">Active</span>
-              <?php else: ?>
-                <span class="badge" style="background:#f1f5f9;color:#64748b;">Done</span>
-              <?php endif; ?>
-            </td>
-            <td>
-              <?php if ($isActive): ?>
-                <form method="POST" style="display:inline;">
-                  <input type="hidden" name="sitin_id" value="<?= $r['id'] ?>"/>
-                  <button type="submit" name="logout_sitin" class="btn btn-red btn-sm"
-                    onclick="return confirm('Log out this student?')">Log Out</button>
-                </form>
-              <?php else: ?>
-                <span style="font-size:12px;color:var(--gray-400);">—</span>
-              <?php endif; ?>
-            </td>
-          </tr>
-          <?php endforeach; else: ?>
-          <tr><td colspan="10" class="no-data">No sit-in records yet.</td></tr>
-          <?php endif; ?>
-        </tbody>
-      </table>
+    
+    <div class="card" style="border-radius:12px;box-shadow:0 4px 12px rgba(0,0,0,0.08);overflow:hidden;border:none;max-width:1200px;margin-left:auto;margin-right:auto;">
+        <div class="table-wrap" style="padding:0;">
+            <table id="recordsTable" style="width:100%;border-collapse:collapse;">
+                <thead>
+                    <tr style="background:linear-gradient(135deg, #1e3a5f, #2a5a8a);color:#fff;">
+                        <th style="padding:14px 16px;text-align:left;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;border-right:1px solid rgba(255,255,255,0.05);">#</th>
+                        <th style="padding:14px 16px;text-align:left;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;border-right:1px solid rgba(255,255,255,0.05);">ID Number</th>
+                        <th style="padding:14px 16px;text-align:left;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;border-right:1px solid rgba(255,255,255,0.05);">Name</th>
+                        <th style="padding:14px 16px;text-align:left;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;border-right:1px solid rgba(255,255,255,0.05);">Purpose</th>
+                        <th style="padding:14px 16px;text-align:left;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;border-right:1px solid rgba(255,255,255,0.05);">Lab</th>
+                        <th style="padding:14px 16px;text-align:left;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;border-right:1px solid rgba(255,255,255,0.05);">Login</th>
+                        <th style="padding:14px 16px;text-align:left;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;border-right:1px solid rgba(255,255,255,0.05);">Logout</th>
+                        <th style="padding:14px 16px;text-align:left;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;border-right:1px solid rgba(255,255,255,0.05);">Duration</th>
+                        <th style="padding:14px 16px;text-align:left;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;border-right:1px solid rgba(255,255,255,0.05);">Date</th>
+                        <th style="padding:14px 16px;text-align:left;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;border-right:1px solid rgba(255,255,255,0.05);">Status</th>
+                        <th style="padding:14px 16px;text-align:left;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;">Action</th>
+                    </tr>
+                </thead>
+                <tbody id="recordsBody">
+                    <?php if ($all_sitin): $cnt=0; foreach ($all_sitin as $r): $cnt++;
+                        $duration = '';
+                        if (!empty($r['login_time']) && !empty($r['logout_time'])) {
+                            $login = new DateTime($r['login_time']);
+                            $logout = new DateTime($r['logout_time']);
+                            $interval = $login->diff($logout);
+                            $duration = $interval->format('%h h %i min');
+                        }
+                        $isActive = empty($r['logout_time']);
+                    ?>
+                    <tr style="border-bottom:1px solid #eef0f3;transition:all 0.2s;cursor:default;background:<?= $cnt % 2 === 0 ? '#fafbfc' : '#ffffff' ?>;" onmouseover="this.style.background='#f0f4f9';this.style.transform='scale(1.002)';" onmouseout="this.style.background='<?= $cnt % 2 === 0 ? '#fafbfc' : '#ffffff' ?>';this.style.transform='scale(1)';">
+                        <td style="padding:12px 16px;font-size:13px;color:#4a5568;font-weight:600;text-align:center;"><?= $cnt ?></td>
+                        <td style="padding:12px 16px;font-size:13px;color:#1e3a5f;font-weight:600;font-family:monospace;"><?= htmlspecialchars($r['id_number']) ?></td>
+                        <td style="padding:12px 16px;font-size:13px;color:#1e2a38;font-weight:500;">
+                            <?= htmlspecialchars($r['fullname']) ?>
+                        </td>
+                        <td style="padding:12px 16px;font-size:13px;color:#4a5568;">
+                            <span style="display:inline-block;background:#e8edf5;color:#1e3a5f;padding:3px 12px;border-radius:14px;font-size:12px;font-weight:500;"><?= htmlspecialchars($r['sit_purpose']) ?></span>
+                        </td>
+                        <td style="padding:12px 16px;font-size:13px;color:#4a5568;font-weight:600;">
+                            <span style="display:inline-block;background:#e8edf5;padding:3px 10px;border-radius:6px;font-size:12px;"><?= htmlspecialchars($r['laboratory']) ?></span>
+                        </td>
+                        <td style="padding:12px 16px;font-size:13px;color:#4a5568;font-weight:500;font-family:monospace;white-space:nowrap;">
+    <?php if (!empty($r['login_time'])): ?>
+        <?= date('h:i A', strtotime($r['login_time'])) ?>
+    <?php else: ?>
+        <span style="color:#c0c8d4;">—</span>
+    <?php endif; ?>
+</td>
+<td style="padding:12px 16px;font-size:13px;color:#4a5568;font-weight:500;font-family:monospace;white-space:nowrap;">
+    <?php if (!empty($r['logout_time'])): ?>
+        <?= date('h:i A', strtotime($r['logout_time'])) ?>
+    <?php else: ?>
+        <span style="color:#c0c8d4;">—</span>
+    <?php endif; ?>
+</td>
+
+                        <td style="padding:12px 16px;font-size:13px;color:#4a5568;font-weight:500;font-family:monospace;white-space:nowrap;">
+    <?php if (!empty($r['date'])): ?>
+        <?= htmlspecialchars($r['date']) ?>
+    <?php else: ?>
+        <span style="color:#c0c8d4;">—</span>
+    <?php endif; ?>
+</td>
+                        <td style="padding:12px 16px;">
+                            <?php if ($isActive): ?>
+                                <span style="display:inline-flex;align-items:center;gap:4px;padding:4px 14px;border-radius:20px;font-size:11px;font-weight:600;background:#d4edda;color:#155724;border:1px solid #b7ebc5;">
+                                    <span style="width:8px;height:8px;background:#28a745;border-radius:50%;display:inline-block;"></span>
+                                    Active
+                                </span>
+                            <?php else: ?>
+                                <span style="display:inline-flex;align-items:center;gap:4px;padding:4px 14px;border-radius:20px;font-size:11px;font-weight:600;background:#f1f5f9;color:#64748b;border:1px solid #e2e8f0;">
+                                    <span style="width:8px;height:8px;background:#94a3b8;border-radius:50%;display:inline-block;"></span>
+                                    Done
+                                </span>
+                            <?php endif; ?>
+                        </td>
+                      <td style="padding:12px 16px;white-space:nowrap;">
+    <?php if ($isActive): ?>
+        <form method="POST" style="display:inline;">
+            <input type="hidden" name="sitin_id" value="<?= $r['id'] ?>"/>
+            <button type="submit" name="logout_sitin" style="padding:4px 12px;border-radius:4px;font-size:11px;font-weight:600;cursor:pointer;border:none;background:#dc3545;color:#fff;" onmouseover="this.style.background='#c82333'" onmouseout="this.style.background='#dc3545'" onclick="return confirm('Log out this student?')">
+                Log Out
+            </button>
+        </form>
+    <?php else: ?>
+        <span style="font-size:12px;color:#c0c8d4;">—</span>
+    <?php endif; ?>
+</td>                    </tr>
+                    <?php endforeach; else: ?>
+                    <tr><td colspan="11" style="padding:40px;text-align:center;color:#9aa5b4;font-size:14px;font-style:italic;">📭 No sit-in records found yet.</td></tr>
+                    <?php endif; ?>
+                </tbody>
+            </table>
+        </div>
+        <div style="padding:14px 18px;border-top:1px solid #eef0f3;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;background:#fafbfc;">
+            <span style="font-size:12.5px;color:var(--gray-400);font-weight:500;" id="recordsInfo"></span>
+            <div style="display:flex;align-items:center;gap:3px;">
+                <button class="page-btn" onclick="goRecordsPage('first')" style="border:none;background:transparent;color:#4a5568;cursor:pointer;padding:4px 8px;font-size:14px;">«</button>
+                <button class="page-btn" onclick="goRecordsPage('prev')" style="border:none;background:transparent;color:#4a5568;cursor:pointer;padding:4px 8px;font-size:14px;">‹</button>
+                <span id="recordsPageBtns" style="display:flex;gap:3px;"></span>
+                <button class="page-btn" onclick="goRecordsPage('next')" style="border:none;background:transparent;color:#4a5568;cursor:pointer;padding:4px 8px;font-size:14px;">›</button>
+                <button class="page-btn" onclick="goRecordsPage('last')" style="border:none;background:transparent;color:#4a5568;cursor:pointer;padding:4px 8px;font-size:14px;">»</button>
+            </div>
+        </div>
     </div>
-    <div style="padding:12px 16px;border-top:1px solid var(--gray-100);display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;">
-      <span style="font-size:12.5px;color:var(--gray-400);" id="recordsInfo"></span>
-      <div style="display:flex;align-items:center;gap:4px;">
-        <button class="page-btn" onclick="goRecordsPage('first')">«</button>
-        <button class="page-btn" onclick="goRecordsPage('prev')">‹</button>
-        <span id="recordsPageBtns" style="display:flex;gap:4px;"></span>
-        <button class="page-btn" onclick="goRecordsPage('next')">›</button>
-        <button class="page-btn" onclick="goRecordsPage('last')">»</button>
-      </div>
-    </div>
-  </div>
 </div>
 
+<!-- ════════════ SESSIONS ════════════ -->
+<div id="page-sessions" class="page-section <?= $page==='sessions'?'active':'' ?>">
+    <div class="page-title" style="margin-bottom:28px;">
+        <div style="display:flex;align-items:center;justify-content:center;gap:12px;flex-wrap:wrap;">
+            <span style="font-size:24px;font-weight:800;color:#1e3a5f;">📋 Sit-in Sessions</span>
+            <span style="background:#eef3f9;color:#1e3a5f;padding:4px 14px;border-radius:20px;font-size:12px;font-weight:600;"><?= count($all_sitin) ?> total</span>
+        </div>
+        <span style="display:block;font-size:13px;font-weight:400;color:#7a8a9e;margin-top:4px;">Complete history of all sit-in sessions with detailed tracking</span>
+    </div>
+
+
+
+    
+    <div class="toolbar" style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;flex-wrap:wrap;gap:10px;background:#fff;padding:12px 16px;border-radius:8px;border:1px solid #e2e6ea;max-width:1200px;margin-left:auto;margin-right:auto;">
+        <div style="display:flex;align-items:center;gap:10px;font-size:13px;color:var(--gray-600);flex-wrap:wrap;">
+            <span style="font-weight:600;color:#1e3a5f;">Show</span>
+            <select class="entries-select" id="sessionsEntries" onchange="paginateSessions()" style="padding:5px 10px;border:1px solid #d0d7e2;border-radius:6px;font-size:13px;background:#fff;font-weight:500;">
+                <option value="10">10</option>
+                <option value="25">25</option>
+                <option value="50">50</option>
+                <option value="100">100</option>
+            </select>
+            <span>entries</span>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px;font-size:13px;color:var(--gray-600);">
+            <span style="font-weight:600;color:#1e3a5f;">🔍 Search:</span>
+            <input type="text" class="search-input" id="sessionsSearch" oninput="filterSessions(this.value)" placeholder="Type to filter..." style="padding:6px 12px;border:1px solid #d0d7e2;border-radius:6px;font-size:13px;width:200px;outline:none;transition:border-color 0.2s;" onfocus="this.style.borderColor='#1e3a5f'" onblur="this.style.borderColor='#d0d7e2'"/>
+        </div>
+    </div>
+    
+    <div class="card" style="border-radius:12px;box-shadow:0 4px 12px rgba(0,0,0,0.08);overflow:hidden;border:none;max-width:1200px;margin-left:auto;margin-right:auto;">
+        <div class="table-wrap" style="padding:0;">
+            <table id="sessionsTable" style="width:100%;border-collapse:collapse;">
+                <thead>
+                    <tr style="background:linear-gradient(135deg, #1e3a5f, #2a5a8a);color:#fff;">
+                        <th style="padding:14px 16px;text-align:left;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;border-right:1px solid rgba(255,255,255,0.05);">#</th>
+                        <th style="padding:14px 16px;text-align:left;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;border-right:1px solid rgba(255,255,255,0.05);">ID Number</th>
+                        <th style="padding:14px 16px;text-align:left;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;border-right:1px solid rgba(255,255,255,0.05);">Name</th>
+                        <th style="padding:14px 16px;text-align:left;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;border-right:1px solid rgba(255,255,255,0.05);">Purpose</th>
+                        <th style="padding:14px 16px;text-align:left;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;border-right:1px solid rgba(255,255,255,0.05);">Lab</th>
+                        <th style="padding:14px 16px;text-align:left;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;border-right:1px solid rgba(255,255,255,0.05);">PC</th>
+                        <th style="padding:14px 16px;text-align:left;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;border-right:1px solid rgba(255,255,255,0.05);">Time-in</th>
+                        <th style="padding:14px 16px;text-align:left;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;border-right:1px solid rgba(255,255,255,0.05);">Time-out</th>
+                        <th style="padding:14px 16px;text-align:left;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;border-right:1px solid rgba(255,255,255,0.05);">Duration</th>
+                        <th style="padding:14px 16px;text-align:left;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;border-right:1px solid rgba(255,255,255,0.05);">Date</th>
+                        <th style="padding:14px 16px;text-align:left;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;">Status</th>
+                    </tr>
+                </thead>
+                <tbody id="sessionsBody">
+                    <?php if ($all_sitin): $cnt=0; foreach ($all_sitin as $s): $cnt++;
+                        $duration = '';
+                        if (!empty($s['login_time']) && !empty($s['logout_time'])) {
+                            $login = new DateTime($s['login_time']);
+                            $logout = new DateTime($s['logout_time']);
+                            $interval = $login->diff($logout);
+                            $duration = $interval->format('%h h %i min');
+                        }
+                        $isActive = empty($s['logout_time']);
+                        $pc_number = isset($s['pc_number']) ? $s['pc_number'] : null;
+                    ?>
+                    <tr style="border-bottom:1px solid #eef0f3;transition:all 0.2s;cursor:default;background:<?= $cnt % 2 === 0 ? '#fafbfc' : '#ffffff' ?>;" onmouseover="this.style.background='#f0f4f9';this.style.transform='scale(1.002)';" onmouseout="this.style.background='<?= $cnt % 2 === 0 ? '#fafbfc' : '#ffffff' ?>';this.style.transform='scale(1)';">
+                        <td style="padding:12px 16px;font-size:13px;color:#4a5568;font-weight:600;text-align:center;"><?= $cnt ?></td>
+                        <td style="padding:12px 16px;font-size:13px;color:#1e3a5f;font-weight:600;font-family:monospace;"><?= htmlspecialchars($s['id_number']) ?></td>
+                        <td style="padding:12px 16px;font-size:13px;color:#1e2a38;font-weight:500;">
+                            <?= htmlspecialchars($s['fullname']) ?>
+                        </td>
+                        <td style="padding:12px 16px;font-size:13px;color:#4a5568;">
+                            <span style="display:inline-block;background:#e8edf5;color:#1e3a5f;padding:3px 12px;border-radius:14px;font-size:12px;font-weight:500;"><?= htmlspecialchars($s['sit_purpose']) ?></span>
+                        </td>
+                        <td style="padding:12px 16px;font-size:13px;color:#4a5568;font-weight:600;">
+                            <span style="display:inline-block;background:#e8edf5;padding:3px 10px;border-radius:6px;font-size:12px;"><?= htmlspecialchars($s['laboratory']) ?></span>
+                        </td>
+                        <td style="padding:12px 16px;font-size:13px;color:#4a5568;font-weight:500;">
+                            <?php if ($pc_number): ?>
+                                <span style="display:inline-block;background:#e8edf5;padding:3px 10px;border-radius:6px;font-size:12px;font-weight:500;">🖥️ <?= $pc_number ?></span>
+                            <?php else: ?>
+                                <span style="color:#c0c8d4;">—</span>
+                            <?php endif; ?>
+                        </td>
+                        <td style="padding:12px 16px;font-size:13px;color:#4a5568;font-weight:500;font-family:monospace;">
+                            <?php if (!empty($s['login_time'])): ?>
+                                <?= date('h:i A', strtotime($s['login_time'])) ?>
+                            <?php else: ?>
+                                <span style="color:#c0c8d4;">—</span>
+                            <?php endif; ?>
+                        </td>
+                        <td style="padding:12px 16px;font-size:13px;color:#4a5568;font-weight:500;font-family:monospace;">
+                            <?php if (!empty($s['logout_time'])): ?>
+                                <?= date('h:i A', strtotime($s['logout_time'])) ?>
+                            <?php else: ?>
+                                <span style="color:#c0c8d4;">—</span>
+                            <?php endif; ?>
+                        </td>
+                        <td style="padding:12px 16px;font-size:13px;color:#4a5568;font-weight:500;">
+                            <?php if ($duration): ?>
+                                <span style="display:inline-block;background:#e8edf5;padding:3px 10px;border-radius:14px;font-size:12px;font-weight:500;">⏱️ <?= $duration ?></span>
+                            <?php else: ?>
+                                <span style="color:#c0c8d4;">—</span>
+                            <?php endif; ?>
+                        </td>
+                        <td style="padding:12px 16px;font-size:13px;color:#4a5568;font-weight:500;font-family:monospace;">
+                            <?php if (!empty($s['date'])): ?>
+                                <?= htmlspecialchars($s['date']) ?>
+                            <?php else: ?>
+                                <span style="color:#c0c8d4;">—</span>
+                            <?php endif; ?>
+                        </td>
+                        <td style="padding:12px 16px;">
+                            <?php if ($isActive): ?>
+                                <span style="display:inline-flex;align-items:center;gap:4px;padding:4px 14px;border-radius:20px;font-size:11px;font-weight:600;background:#d4edda;color:#155724;border:1px solid #b7ebc5;">
+                                    <span style="width:8px;height:8px;background:#28a745;border-radius:50%;display:inline-block;"></span>
+                                    Active
+                                </span>
+                            <?php else: ?>
+                                <span style="display:inline-flex;align-items:center;gap:4px;padding:4px 14px;border-radius:20px;font-size:11px;font-weight:600;background:#f1f5f9;color:#64748b;border:1px solid #e2e8f0;">
+                                    <span style="width:8px;height:8px;background:#94a3b8;border-radius:50%;display:inline-block;"></span>
+                                    Done
+                                </span>
+                            <?php endif; ?>
+                        </td>
+                    </tr>
+                    <?php endforeach; else: ?>
+                    <tr><td colspan="11" style="padding:40px;text-align:center;color:#9aa5b4;font-size:14px;font-style:italic;">📭 No sit-in sessions found yet.</td></tr>
+                    <?php endif; ?>
+                </tbody>
+            </table>
+        </div>
+        <div style="padding:14px 18px;border-top:1px solid #eef0f3;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;background:#fafbfc;">
+            <span style="font-size:12.5px;color:var(--gray-400);font-weight:500;" id="sessionsInfo"></span>
+            <div style="display:flex;align-items:center;gap:3px;">
+                <button class="page-btn" onclick="goSessionsPage('first')" style="border:none;background:transparent;color:#4a5568;cursor:pointer;padding:4px 8px;font-size:14px;">«</button>
+                <button class="page-btn" onclick="goSessionsPage('prev')" style="border:none;background:transparent;color:#4a5568;cursor:pointer;padding:4px 8px;font-size:14px;">‹</button>
+                <span id="sessionsPageBtns" style="display:flex;gap:3px;"></span>
+                <button class="page-btn" onclick="goSessionsPage('next')" style="border:none;background:transparent;color:#4a5568;cursor:pointer;padding:4px 8px;font-size:14px;">›</button>
+                <button class="page-btn" onclick="goSessionsPage('last')" style="border:none;background:transparent;color:#4a5568;cursor:pointer;padding:4px 8px;font-size:14px;">»</button>
+            </div>
+        </div>
+    </div>
+</div>
+<?php
+// Calculate totals for the report
+$total_sessions = count($all_sitin);
+$total_hours = 0;
+foreach ($all_sitin as $r) {
+    if (!empty($r['login_time']) && !empty($r['logout_time'])) {
+        $login = new DateTime($r['login_time']);
+        $logout = new DateTime($r['logout_time']);
+        $interval = $login->diff($logout);
+        $total_hours += $interval->h + ($interval->i / 60);
+    }
+}
+?>
 <!-- ════════════ REPORTS ════════════ -->
 <div id="page-reports" class="page-section <?= $page==='reports'?'active':'' ?>">
-  <div class="page-title">Sit-in Reports</div>
-  <div class="home-grid">
-    <div class="card">
-      <div class="card-head"><h2>Purpose Breakdown</h2></div>
-      <div class="chart-wrap"><canvas id="reportsChart" style="max-width:300px;"></canvas></div>
+    <div class="page-title" style="margin-bottom:28px;">
+        <div style="display:flex;align-items:center;justify-content:center;gap:12px;flex-wrap:wrap;">
+            <span style="font-size:24px;font-weight:800;color:#1e3a5f;">📊 Reports</span>
+            <span style="background:#eef3f9;color:#1e3a5f;padding:4px 14px;border-radius:20px;font-size:12px;font-weight:600;">Analytics</span>
+        </div>
+        <span style="display:block;font-size:13px;font-weight:400;color:#7a8a9e;margin-top:4px;">Sit-in statistics and data visualization</span>
     </div>
-    <div class="card">
-      <div class="card-head"><h2>Summary Table</h2></div>
-      <div class="table-wrap">
-        <table>
-          <thead><tr><th>Purpose</th><th>Count</th></tr></thead>
-          <tbody>
-            <?php foreach ($purpose_rows as $p): ?>
-            <tr><td><?= htmlspecialchars($p['sit_purpose']) ?></td><td><?= $p['cnt'] ?></td></tr>
-            <?php endforeach; ?>
-            <?php if (!$purpose_rows): ?>
-            <tr><td colspan="2" class="no-data">No data yet.</td></tr>
-            <?php endif; ?>
-          </tbody>
-        </table>
-      </div>
+    
+    <!-- Export Buttons -->
+    <div style="display:flex;gap:10px;margin-bottom:24px;justify-content:flex-end;flex-wrap:wrap;max-width:1200px;margin:0 auto 24px auto;">
+        <a href="export_report.php?format=csv&type=all" style="padding:8px 20px;border-radius:6px;font-size:13px;font-weight:600;cursor:pointer;text-decoration:none;background:#1e3a5f;color:#fff;transition:all 0.2s;display:inline-flex;align-items:center;gap:6px;" onmouseover="this.style.background='#16304f';this.style.transform='translateY(-1px)';" onmouseout="this.style.background='#1e3a5f';this.style.transform='translateY(0)';">
+            📥 Export CSV
+        </a>
+        <a href="export_pdf_simple.php" style="padding:8px 20px;border-radius:6px;font-size:13px;font-weight:600;cursor:pointer;text-decoration:none;background:#1e3a5f;color:#fff;transition:all 0.2s;display:inline-flex;align-items:center;gap:6px;" onmouseover="this.style.background='#16304f';this.style.transform='translateY(-1px)';" onmouseout="this.style.background='#1e3a5f';this.style.transform='translateY(0)';">
+            📥 Export PDF
+        </a>
     </div>
-  </div>
+    
+    <!-- Report Preview -->
+    <div style="background:#fff;border-radius:12px;box-shadow:0 4px 12px rgba(0,0,0,0.08);padding:30px;max-width:1200px;margin:0 auto;">
+        <div style="text-align:center;margin-bottom:30px;border-bottom:3px solid #1e3a5f;padding-bottom:15px;">
+            <h1 style="color:#1e3a5f;font-size:24px;">📊 CCS Sit-in Report</h1>
+        </div>
+        
+        <div style="display:flex;justify-content:center;gap:40px;margin-bottom:25px;">
+            <div style="text-align:center;">
+                <div style="font-size:28px;font-weight:700;color:#1e3a5f;"><?= count($all_sitin) ?></div>
+                <div style="font-size:12px;color:#9aa5b4;">Total Sessions</div>
+            </div>
+            <div style="text-align:center;">
+                <div style="font-size:28px;font-weight:700;color:#1e3a5f;"><?= round($total_hours, 1) ?></div>
+                <div style="font-size:12px;color:#9aa5b4;">Total Hours</div>
+            </div>
+        </div>
+        
+        <div style="overflow-x:auto;">
+            <table style="width:100%;border-collapse:collapse;margin-top:15px;">
+                <thead>
+                    <tr style="background:#1e3a5f;color:#fff;">
+                        <th style="padding:10px 12px;text-align:left;font-size:11px;text-transform:uppercase;">#</th>
+                        <th style="padding:10px 12px;text-align:left;font-size:11px;text-transform:uppercase;">ID Number</th>
+                        <th style="padding:10px 12px;text-align:left;font-size:11px;text-transform:uppercase;">Name</th>
+                        <th style="padding:10px 12px;text-align:left;font-size:11px;text-transform:uppercase;">Purpose</th>
+                        <th style="padding:10px 12px;text-align:left;font-size:11px;text-transform:uppercase;">Lab</th>
+                        <th style="padding:10px 12px;text-align:left;font-size:11px;text-transform:uppercase;">Login</th>
+                        <th style="padding:10px 12px;text-align:left;font-size:11px;text-transform:uppercase;">Logout</th>
+                        <th style="padding:10px 12px;text-align:left;font-size:11px;text-transform:uppercase;">Duration</th>
+                        <th style="padding:10px 12px;text-align:left;font-size:11px;text-transform:uppercase;">Date</th>
+                        <th style="padding:10px 12px;text-align:left;font-size:11px;text-transform:uppercase;">Status</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <?php $cnt = 0; foreach ($all_sitin as $r): $cnt++;
+                        $duration = '';
+                        if (!empty($r['login_time']) && !empty($r['logout_time'])) {
+                            $login = new DateTime($r['login_time']);
+                            $logout = new DateTime($r['logout_time']);
+                            $interval = $login->diff($logout);
+                            $duration = $interval->format('%h h %i min');
+                        }
+                        $isActive = empty($r['logout_time']);
+                    ?>
+                    <tr style="border-bottom:1px solid #eef0f3;">
+                        <td style="padding:8px 12px;font-size:12px;"><?= $cnt ?></td>
+                        <td style="padding:8px 12px;font-size:12px;font-weight:bold;"><?= htmlspecialchars($r['id_number']) ?></td>
+                        <td style="padding:8px 12px;font-size:12px;"><?= htmlspecialchars($r['fullname']) ?></td>
+                        <td style="padding:8px 12px;font-size:12px;"><?= htmlspecialchars($r['sit_purpose']) ?></td>
+                        <td style="padding:8px 12px;font-size:12px;"><?= htmlspecialchars($r['laboratory']) ?></td>
+                        <td style="padding:8px 12px;font-size:12px;"><?= htmlspecialchars($r['login_time'] ?? '—') ?></td>
+                        <td style="padding:8px 12px;font-size:12px;"><?= htmlspecialchars($r['logout_time'] ?? '—') ?></td>
+                        <td style="padding:8px 12px;font-size:12px;"><?= $duration ?: '—' ?></td>
+                        <td style="padding:8px 12px;font-size:12px;"><?= htmlspecialchars($r['date']) ?></td>
+                        <td style="padding:8px 12px;font-size:12px;font-weight:bold;"><?= $isActive ? 'Active' : 'Done' ?></td>
+                    </tr>
+                    <?php endforeach; ?>
+                </tbody>
+            </table>
+        </div>
+        
+        <div style="text-align:center;margin-top:30px;font-size:12px;color:#9aa5b4;border-top:1px solid #eef0f3;padding-top:15px;">
+            College of Computer Studies · University of Cebu · Sit-in Monitoring System
+        </div>
+    </div>
 </div>
-
 <!-- ════════════ RESERVATION ════════════ -->
 <div id="page-reservation" class="page-section <?= $page==='reservation'?'active':'' ?>">
   <div class="page-title">Reservations</div>
+  
+  <?php
+  $stmt = $pdo->prepare("SELECT setting_value FROM settings WHERE setting_key = 'reservations_enabled'");
+  $stmt->execute();
+  $reservations_enabled = $stmt->fetchColumn() === '1';
+  ?>
+  
+  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:18px;flex-wrap:wrap;gap:10px;">
+    <div style="display:flex;align-items:center;gap:12px;">
+      <span style="font-size:13px;font-weight:600;color:var(--gray-600);">Reservation Status:</span>
+      <span class="badge <?= $reservations_enabled ? 'badge-approved' : 'badge-rejected' ?>" style="font-size:14px;padding:4px 14px;">
+        <?= $reservations_enabled ? '🟢 OPEN' : '🔴 CLOSED' ?>
+      </span>
+    </div>
+    
+    <form method="POST" style="display:inline;">
+      <input type="hidden" name="toggle_reservations" value="1">
+      <button type="submit" class="btn <?= $reservations_enabled ? 'btn-red' : 'btn-green' ?>" onclick="return confirm('Are you sure you want to <?= $reservations_enabled ? 'disable' : 'enable' ?> reservations?')">
+        <?= $reservations_enabled ? '🔒 Disable Reservations' : '🔓 Enable Reservations' ?>
+      </button>
+    </form>
+  </div>
+  
   <div class="toolbar">
     <div class="toolbar-right">
       <span style="font-size:13px;color:var(--gray-600);">Search:</span>
       <input type="text" class="search-input" oninput="filterTable('reservTable',this.value)" placeholder=""/>
     </div>
   </div>
+  
   <div class="card">
     <div class="table-wrap">
       <table id="reservTable">
@@ -701,7 +1173,7 @@ tbody td{padding:8px 11px;font-size:13px;color:var(--gray-600);}
         <input type="hidden" name="student_id" id="sitin_student_id" value="0"/>
         <table style="width:100%;border-collapse:separate;border-spacing:0 10px;">
           <tr>
-            <td style="width:38%;font-size:13px;color:#3d607f;font-weight:600;padding-right:12px;white-space:nowrap;">ID Number:</td>
+            <td style="width:35%;font-size:13px;color:#3d607f;font-weight:600;padding-right:12px;white-space:nowrap;">ID Number:</td>
             <td>
               <div style="display:flex;gap:6px;">
                 <input type="text" name="id_number" id="sitin_id_number" placeholder="Enter student ID"
@@ -726,8 +1198,32 @@ tbody td{padding:8px 11px;font-size:13px;color:var(--gray-600);}
           </tr>
           <tr>
             <td style="font-size:13px;color:#3d607f;font-weight:600;padding-right:12px;">Lab:</td>
-            <td><input type="text" name="lab" id="sitin_lab" placeholder="e.g. 524" required
-                       style="width:100%;padding:8px 11px;border:1px solid var(--blue-bd);border-radius:6px;font-size:13px;font-family:inherit;color:var(--blue-dk);outline:none;"/></td>
+            <td>
+              <select name="lab" id="sitin_lab" required style="width:100%;padding:8px 11px;border:1px solid var(--blue-bd);border-radius:6px;font-size:13px;font-family:inherit;color:var(--blue-dk);outline:none;">
+                <option value="">Select Lab</option>
+                <option value="524">Lab 524</option>
+                <option value="526">Lab 526</option>
+                <option value="528">Lab 528</option>
+              </select>
+            </td>
+          </tr>
+          <tr>
+            <td style="font-size:13px;color:#3d607f;font-weight:600;padding-right:12px;">PC Number:</td>
+            <td>
+              <select name="pc_number" id="sitin_pc" required style="width:100%;padding:8px 11px;border:1px solid var(--blue-bd);border-radius:6px;font-size:13px;font-family:inherit;color:var(--blue-dk);outline:none;">
+                <option value="">Select PC</option>
+                <option value="1">PC 1</option>
+                <option value="2">PC 2</option>
+                <option value="3">PC 3</option>
+                <option value="4">PC 4</option>
+                <option value="5">PC 5</option>
+                <option value="6">PC 6</option>
+                <option value="7">PC 7</option>
+                <option value="8">PC 8</option>
+                <option value="9">PC 9</option>
+                <option value="10">PC 10</option>
+              </select>
+            </td>
           </tr>
           <tr>
             <td style="font-size:13px;color:#3d607f;font-weight:600;padding-right:12px;">Sessions Left:</td>
@@ -1033,6 +1529,52 @@ function filterRecords(q){ recordsSearchQuery = q; recordsCurrentPage = 1; rende
 function paginateRecords(){ recordsCurrentPage = 1; renderRecords(); }
 window.addEventListener('load', renderRecords);
 
+// ── Sessions pagination ──
+let sessionsCurrentPage = 1;
+let sessionsSearchQuery = '';
+function getSessionsRows(){ return Array.from(document.querySelectorAll('#sessionsBody tr')); }
+function getFilteredSessionsRows(){
+  const q = sessionsSearchQuery.toLowerCase();
+  return getSessionsRows().filter(r => !q || r.textContent.toLowerCase().includes(q));
+}
+function renderSessions(){
+  const perPage  = parseInt(document.getElementById('sessionsEntries').value) || 10;
+  const filtered = getFilteredSessionsRows();
+  const total    = filtered.length;
+  const pages    = Math.max(1, Math.ceil(total / perPage));
+  sessionsCurrentPage = Math.min(sessionsCurrentPage, pages);
+  const start = (sessionsCurrentPage - 1) * perPage;
+  const end   = start + perPage;
+  getSessionsRows().forEach(r => r.style.display = 'none');
+  filtered.forEach((r, i) => { r.style.display = (i >= start && i < end) ? '' : 'none'; });
+  const showing = Math.min(end, total);
+  document.getElementById('sessionsInfo').textContent = total === 0 ? 'No entries' :
+    `Showing ${start + 1} to ${showing} of ${total} entr${total === 1 ? 'y' : 'ies'}`;
+  const btns = document.getElementById('sessionsPageBtns');
+  btns.innerHTML = '';
+  const maxPages = Math.min(pages, 10);
+  const startPage = Math.max(1, sessionsCurrentPage - 4);
+  for (let i = startPage; i <= Math.min(startPage + maxPages - 1, pages); i++){
+    const b = document.createElement('button');
+    b.className = 'page-btn' + (i === sessionsCurrentPage ? ' active' : '');
+    b.textContent = i;
+    b.onclick = () => { sessionsCurrentPage = i; renderSessions(); };
+    btns.appendChild(b);
+  }
+}
+function goSessionsPage(dir){
+  const perPage = parseInt(document.getElementById('sessionsEntries').value) || 10;
+  const pages   = Math.max(1, Math.ceil(getFilteredSessionsRows().length / perPage));
+  if (dir === 'first') sessionsCurrentPage = 1;
+  else if (dir === 'prev')  sessionsCurrentPage = Math.max(1, sessionsCurrentPage - 1);
+  else if (dir === 'next')  sessionsCurrentPage = Math.min(pages, sessionsCurrentPage + 1);
+  else if (dir === 'last')  sessionsCurrentPage = pages;
+  renderSessions();
+}
+function filterSessions(q){ sessionsSearchQuery = q; sessionsCurrentPage = 1; renderSessions(); }
+function paginateSessions(){ sessionsCurrentPage = 1; renderSessions(); }
+window.addEventListener('load', renderSessions);
+
 // ── Pie Charts ──
 const purposeLabels = <?php echo json_encode(array_column($purpose_rows,'sit_purpose') ?: ['No Data']); ?>;
 const purposeCounts = <?php echo json_encode(array_column($purpose_rows,'cnt') ?: [1]); ?>;
@@ -1059,5 +1601,6 @@ function buildChart(canvasId){
 buildChart('purposeChart');
 buildChart('reportsChart');
 </script>
+<script src="darkmode.js"></script>
 </body>
 </html>

@@ -62,13 +62,17 @@ nav{background:#1e3a5f;height:54px;padding:0 24px;display:flex;align-items:cente
 
 /* --- FIXED BADGE AND NAVIGATION WRAPPER ALIGNMENT --- */
 .notif-wrapper{position:relative;display:inline-block;}
+
+/* Flexbox design forces the inline items to stay perfectly centered on a horizontal line row */
 .notif-trigger {
     display: inline-flex !important;
     align-items: center !important;
-    gap: 6px !important;
+    gap: 6px !important; /* Creates clear horizontal spacing between the word and number */
 }
+
+/* Customized pill layout that handles double digits nicely without dropping down */
 .notif-badge {
-    background-color: #c53030;
+    background-color: #c53030; /* Matches your logout-red color variable */
     color: white;
     font-size: 11px;
     font-weight: 700;
@@ -79,6 +83,7 @@ nav{background:#1e3a5f;height:54px;padding:0 24px;display:flex;align-items:cente
     align-items: center;
     justify-content: center;
 }
+
 .notif-dropdown{display:none;position:absolute;right:0;top:45px;background:#fff;border-radius:8px;box-shadow:0 4px 12px rgba(0,0,0,0.15);width:280px;z-index:1000;border:1px solid #e2e6ea;padding:10px 0;max-height:300px;overflow-y:auto;}
 .notif-header{padding:5px 15px 10px;font-size:12px;font-weight:700;color:#1e3a5f;border-bottom:1px solid #f0f2f5;}
 .notif-item{padding:10px 15px;border-bottom:1px solid #f0f2f5;text-decoration:none;display:block;}
@@ -137,21 +142,39 @@ nav{background:#1e3a5f;height:54px;padding:0 24px;display:flex;align-items:cente
 </style>
 </head>
 <body>
-  <nav>
+<nav>
   <div class="nav-brand">CCS Sit-in Monitoring System</div>
   <div class="nav-links">
-    <?php include 'notif_dropdown.php'; ?>
+    <div class="notif-wrapper">
+        <a onclick="toggleDropdown()" class="notif-trigger">
+            <span>Notifications</span>
+            <?php if ($unread_count > 0): ?>
+                <span id="notif-badge" class="notif-badge"><?= $unread_count ?></span>
+            <?php endif; ?>
+        </a>
+        <div id="notif-dropdown" class="notif-dropdown">
+            <div class="notif-header">Recent Notifications</div>
+            <?php if (!empty($recent_notifications)): foreach ($recent_notifications as $row): ?>
+                <a href="notifications.php" class="notif-item">
+                    <div class="notif-msg"><?= htmlspecialchars($row['message'] ?? 'No message') ?></div>
+                    <div class="notif-time"><?= date('M d, h:i A', strtotime($row['created_at'])) ?></div>
+                </a>
+            <?php endforeach; else: ?>
+                <div class="notif-item" style="color:#9aa5b4;text-align:center;">No new notifications</div>
+            <?php endif; ?>
+            <a href="notifications.php" class="view-all-link">View All</a>
+        </div>
+    </div>
+    
     <a href="homepage.php" class="active">Home</a>
     <a href="profile.php">Edit Profile</a>
     <a href="history.php">History</a>
     <a href="reservation.php">Reservation</a>
     <a href="logout.php" class="btn-logout">Log out</a>
-    <a href="lab_availability.php">Lab Availability</a>
-    <a href="testimonials.php">Testimonials</a>
   </div>
 </nav>
+
 <div class="dashboard">
-  <!-- LEFT CARD: Student Information -->
   <div class="card">
     <div class="card-head">
       <svg viewBox="0 0 24 24"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
@@ -198,144 +221,9 @@ nav{background:#1e3a5f;height:54px;padding:0 24px;display:flex;align-items:cente
           <span class="info-value session-highlight"><?= htmlspecialchars($_SESSION['session'] ?? '0') ?> / 30</span>
         </div>
       </div>
-      
-      <!-- ENHANCED SIT-IN SUMMARY -->
-      <div style="border-top:2px solid #dce4ed;margin-top:14px;padding-top:14px;">
-        <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;">
-          <span style="font-size:11px;font-weight:700;color:#1e3a5f;text-transform:uppercase;letter-spacing:0.05em;">📊 Sit-in Summary</span>
-          <span style="font-size:9px;color:#9aa5b4;background:#f0f2f5;padding:2px 8px;border-radius:10px;">Live</span>
-        </div>
-        
-        <?php
-        // Calculate stats from sit_in_history
-        $statsStmt = $pdo->prepare("
-            SELECT 
-                COUNT(*) as total_sessions,
-                SUM(TIMESTAMPDIFF(MINUTE, login_time, logout_time)) as total_minutes,
-                MAX(TIMESTAMPDIFF(MINUTE, login_time, logout_time)) as longest_minutes,
-                MIN(TIMESTAMPDIFF(MINUTE, login_time, logout_time)) as shortest_minutes
-            FROM sit_in_history 
-            WHERE student_id = ? AND logout_time IS NOT NULL
-        ");
-        $statsStmt->execute([$_SESSION['student_id']]);
-        $stats = $statsStmt->fetch();
-        
-        $total_sessions = $stats['total_sessions'] ?? 0;
-        $total_minutes = $stats['total_minutes'] ?? 0;
-        $total_hours = floor($total_minutes / 60);
-        $total_remaining_minutes = $total_minutes % 60;
-        
-        $avg_minutes = $total_sessions > 0 ? round($total_minutes / $total_sessions, 0) : 0;
-        $avg_hours = floor($avg_minutes / 60);
-        $avg_remaining_minutes = $avg_minutes % 60;
-        
-        $longest_minutes = $stats['longest_minutes'] ?? 0;
-        $longest_hours = floor($longest_minutes / 60);
-        $longest_remaining_minutes = $longest_minutes % 60;
-        
-        $shortest_minutes = $stats['shortest_minutes'] ?? 0;
-        $shortest_hours = floor($shortest_minutes / 60);
-        $shortest_remaining_minutes = $shortest_minutes % 60;
-        ?>
-        
-        <!-- Stats Grid with Icons -->
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
-          <!-- Total Hours -->
-          <div style="background:linear-gradient(135deg, #eef3f9, #e3eaf2);padding:10px 12px;border-radius:8px;border-left:3px solid #1e3a5f;">
-            <div style="display:flex;align-items:center;gap:6px;margin-bottom:2px;">
-              <span style="font-size:13px;">🕐</span>
-              <span style="font-size:10px;color:#4a5568;font-weight:500;">Total Hours</span>
-            </div>
-            <div style="font-size:18px;font-weight:700;color:#1e3a5f;">
-              <?= $total_hours ?><span style="font-size:12px;font-weight:400;color:#4a5568;">h</span>
-              <?php if ($total_remaining_minutes > 0): ?>
-                <span style="font-size:12px;font-weight:400;color:#4a5568;"> <?= $total_remaining_minutes ?>m</span>
-              <?php endif; ?>
-            </div>
-          </div>
-          
-          <!-- Sessions -->
-          <div style="background:linear-gradient(135deg, #eef3f9, #e3eaf2);padding:10px 12px;border-radius:8px;border-left:3px solid #1e3a5f;">
-            <div style="display:flex;align-items:center;gap:6px;margin-bottom:2px;">
-              <span style="font-size:13px;">📋</span>
-              <span style="font-size:10px;color:#4a5568;font-weight:500;">Sessions</span>
-            </div>
-            <div style="font-size:18px;font-weight:700;color:#1e3a5f;">
-              <?= $total_sessions ?>
-            </div>
-          </div>
-          
-          <!-- Average Duration -->
-          <div style="background:linear-gradient(135deg, #eef3f9, #e3eaf2);padding:10px 12px;border-radius:8px;border-left:3px solid #2a6f97;">
-            <div style="display:flex;align-items:center;gap:6px;margin-bottom:2px;">
-              <span style="font-size:13px;">📊</span>
-              <span style="font-size:10px;color:#4a5568;font-weight:500;">Avg Duration</span>
-            </div>
-            <div style="font-size:18px;font-weight:700;color:#2a6f97;">
-              <?php if ($avg_hours > 0): ?>
-                <?= $avg_hours ?><span style="font-size:12px;font-weight:400;color:#4a5568;">h</span>
-              <?php endif; ?>
-              <span style="font-size:12px;font-weight:400;color:#4a5568;"> <?= $avg_remaining_minutes ?>m</span>
-            </div>
-          </div>
-          
-          <!-- Longest Session -->
-          <div style="background:linear-gradient(135deg, #fef3e2, #fde8d0);padding:10px 12px;border-radius:8px;border-left:3px solid #c75b2a;">
-            <div style="display:flex;align-items:center;gap:6px;margin-bottom:2px;">
-              <span style="font-size:13px;">🏆</span>
-              <span style="font-size:10px;color:#4a5568;font-weight:500;">Longest</span>
-            </div>
-            <div style="font-size:18px;font-weight:700;color:#c75b2a;">
-              <?php if ($longest_hours > 0): ?>
-                <?= $longest_hours ?><span style="font-size:12px;font-weight:400;color:#4a5568;">h</span>
-              <?php endif; ?>
-              <span style="font-size:12px;font-weight:400;color:#4a5568;"> <?= $longest_remaining_minutes ?>m</span>
-            </div>
-          </div>
-          
-          <!-- Shortest Session -->
-          <div style="background:linear-gradient(135deg, #e6f7e6, #d0edd0);padding:10px 12px;border-radius:8px;border-left:3px solid #2a8f2a;">
-            <div style="display:flex;align-items:center;gap:6px;margin-bottom:2px;">
-              <span style="font-size:13px;">⏱️</span>
-              <span style="font-size:10px;color:#4a5568;font-weight:500;">Shortest</span>
-            </div>
-            <div style="font-size:18px;font-weight:700;color:#2a8f2a;">
-              <?php if ($shortest_hours > 0): ?>
-                <?= $shortest_hours ?><span style="font-size:12px;font-weight:400;color:#4a5568;">h</span>
-              <?php endif; ?>
-              <span style="font-size:12px;font-weight:400;color:#4a5568;"> <?= $shortest_remaining_minutes ?>m</span>
-            </div>
-          </div>
-          
-          <!-- Remaining Sessions -->
-          <div style="background:linear-gradient(135deg, #fef9e7, #fdf3d1);padding:10px 12px;border-radius:8px;border-left:3px solid #d4a017;grid-column:1/3;">
-            <div style="display:flex;align-items:center;justify-content:space-between;">
-              <div style="display:flex;align-items:center;gap:6px;">
-                <span style="font-size:13px;">💻</span>
-                <span style="font-size:10px;color:#4a5568;font-weight:500;">Remaining Sessions</span>
-              </div>
-              <div style="font-size:16px;font-weight:700;color:#d4a017;">
-                <?= htmlspecialchars($_SESSION['session'] ?? '0') ?> / 30
-              </div>
-            </div>
-            <!-- Progress bar -->
-            <div style="margin-top:6px;height:4px;background:#e9ecef;border-radius:4px;overflow:hidden;">
-              <div style="height:100%;background:linear-gradient(90deg, #d4a017, #f0c027);width:<?= min(100, (($_SESSION['session'] ?? 0) / 30) * 100) ?>%;border-radius:4px;"></div>
-            </div>
-          </div>
-        </div>
-        
-        <!-- Small note for empty data -->
-        <?php if ($total_sessions == 0): ?>
-          <div style="text-align:center;padding:8px;font-size:12px;color:#9aa5b4;background:#f8f9fa;border-radius:6px;margin-top:8px;">
-            No sit-in history yet. Start using the lab to build your stats!
-          </div>
-        <?php endif; ?>
-      </div>
     </div>
   </div>
 
-  <!-- MIDDLE CARD: Announcements -->
   <div class="card">
     <div class="card-head">
       <svg viewBox="0 0 24 24"><path d="M22 17H2a3 3 0 0 0 3-3V9a7 7 0 0 1 14 0v5a3 3 0 0 0 3 3z"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
@@ -357,7 +245,6 @@ nav{background:#1e3a5f;height:54px;padding:0 24px;display:flex;align-items:cente
     </div>
   </div>
 
-  <!-- RIGHT CARD: Rules and Regulations -->
   <div class="card">
     <div class="card-head">
       <svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>

@@ -1,5 +1,5 @@
 <?php
-require_once 'db.php'; // Standardized PDO connection
+require_once 'db.php';
 
 $sitin_id = isset($_GET['sitin_id']) ? $_GET['sitin_id'] : null;
 
@@ -14,185 +14,199 @@ if (!$sitin_id) {
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>CCS | Submit Feedback</title>
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
     <style>
-        :root {
-            --nav-bg: #1e3a5f; /* Dark navy from your header */
-            --primary-blue: #3498db; /* Blue from 'Give Feedback' button */
-            --primary-hover: #2980b9;
-            --logout-red: #e74c3c; /* Red from 'Log out' button */
-            --text-dark: #2c3e50;
-            --text-muted: #7f8c8d;
-            --bg-light: #f4f7f6;
-            --border-color: #dcdde1;
-        }
-
+        * { box-sizing: border-box; margin: 0; padding: 0; }
         body {
-            font-family: 'Segoe UI', Arial, sans-serif;
-            background-color: var(--bg-light);
-            margin: 0;
+            font-family: 'Plus Jakarta Sans', sans-serif;
+            background: #f7f8fa;
+            min-height: 100vh;
             display: flex;
             flex-direction: column;
-            height: 100vh;
-        }
-
-        /* Matches your top navigation bar */
-        .navbar {
-            background-color: var(--nav-bg);
-            color: white;
-            padding: 15px 50px;
-            display: flex;
-            justify-content: space-between;
             align-items: center;
-            font-weight: bold;
         }
-
+        
+        .navbar {
+            width: 100%;
+            background: #1e3a5f;
+            padding: 14px 30px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            position: sticky;
+            top: 0;
+            z-index: 100;
+        }
+        .navbar span {
+            color: #fff;
+            font-size: 15px;
+            font-weight: 700;
+            letter-spacing: 0.5px;
+        }
+        
         .container {
             flex: 1;
             display: flex;
             justify-content: center;
             align-items: center;
-            padding: 20px;
-        }
-
-        .feedback-card {
-            background: white;
+            padding: 40px 20px;
             width: 100%;
-            max-width: 550px;
-            padding: 40px;
-            border-radius: 12px;
-            box-shadow: 0 10px 25px rgba(0,0,0,0.05);
-            box-sizing: border-box;
         }
-
+        
+        .feedback-card {
+            background: #fff;
+            width: 100%;
+            max-width: 560px;
+            padding: 40px 36px;
+            border-radius: 16px;
+            box-shadow: 0 8px 30px rgba(0,0,0,0.08);
+            border: 1px solid #eef0f3;
+        }
+        
         .feedback-header {
             text-align: center;
-            margin-bottom: 25px;
+            margin-bottom: 28px;
         }
-
+        
         .icon-circle {
-            width: 56px;
-            height: 56px;
-            background-color: #ebf5fb;
-            color: var(--primary-blue);
+            width: 60px;
+            height: 60px;
+            background: #eef3f9;
             border-radius: 50%;
             display: flex;
-            justify-content: center;
             align-items: center;
-            margin: 0 auto 15px auto;
+            justify-content: center;
+            margin: 0 auto 16px auto;
         }
-
+        .icon-circle svg {
+            width: 28px;
+            height: 28px;
+            stroke: #1e3a5f;
+            fill: none;
+            stroke-width: 1.5;
+            stroke-linecap: round;
+            stroke-linejoin: round;
+        }
+        
         h2 {
-            color: var(--nav-bg);
-            margin: 0 0 8px 0;
-            font-size: 24px;
-            font-weight: 600;
+            color: #1e3a5f;
+            font-size: 22px;
+            font-weight: 700;
+            margin-bottom: 6px;
         }
-
-        .feedback-header p {
-            color: var(--text-muted);
+        
+        .subtitle {
+            color: #7a8a9e;
             font-size: 14px;
-            line-height: 1.5;
-            margin: 0;
+            line-height: 1.6;
         }
-
+        
         .textarea-container {
             position: relative;
-            margin-bottom: 5px;
+            margin-bottom: 6px;
         }
-
+        
         textarea {
             width: 100%;
-            height: 160px;
-            padding: 15px;
-            border: 1px solid var(--border-color);
-            border-radius: 8px;
-            font-size: 15px;
-            color: var(--text-dark);
+            height: 150px;
+            padding: 14px 16px;
+            border: 1.5px solid #d0d7e2;
+            border-radius: 10px;
+            font-size: 14px;
+            font-family: 'Plus Jakarta Sans', sans-serif;
+            color: #1e2a38;
             resize: none;
-            box-sizing: border-box;
             outline: none;
-            background-color: #fafafa;
-            transition: all 0.3s ease;
+            transition: border-color 0.2s, box-shadow 0.2s;
+            background: #fafbfc;
         }
-
         textarea:focus {
-            border-color: var(--primary-blue);
-            background-color: #ffffff;
-            box-shadow: 0 0 0 4px rgba(52, 152, 219, 0.1);
+            border-color: #1e3a5f;
+            box-shadow: 0 0 0 4px rgba(30, 58, 95, 0.06);
+            background: #fff;
         }
-
+        textarea::placeholder {
+            color: #9aa5b4;
+        }
+        
         .char-count {
             text-align: right;
             font-size: 12px;
-            color: var(--text-muted);
-            margin-top: 6px;
-            padding-right: 4px;
+            color: #9aa5b4;
+            margin-top: 4px;
+            font-weight: 500;
         }
-
+        
         .button-group {
-            margin-top: 25px;
             display: flex;
-            justify-content: flex-end;
-            gap: 12px;
+            gap: 10px;
+            margin-top: 22px;
         }
-
+        
         .btn-submit {
-            background-color: var(--primary-blue);
-            color: white;
+            flex: 1;
+            padding: 12px 20px;
             border: none;
-            padding: 12px 28px;
-            border-radius: 6px;
-            cursor: pointer;
-            font-weight: 600;
+            border-radius: 8px;
+            background: #1e3a5f;
+            color: #fff;
             font-size: 14px;
-            transition: background-color 0.2s, transform 0.1s;
+            font-weight: 600;
+            font-family: 'Plus Jakarta Sans', sans-serif;
+            cursor: pointer;
+            transition: all 0.2s;
         }
-
         .btn-submit:hover {
-            background-color: var(--primary-hover);
+            background: #16304f;
+            transform: translateY(-1px);
         }
-
         .btn-submit:active {
             transform: scale(0.98);
         }
-
+        
         .btn-cancel {
-            background-color: transparent;
-            color: var(--text-muted);
-            border: 1px solid var(--border-color);
-            padding: 11px 24px;
-            border-radius: 6px;
-            text-decoration: none;
-            font-weight: 600;
+            padding: 12px 24px;
+            border: 1.5px solid #d0d7e2;
+            border-radius: 8px;
+            background: transparent;
+            color: #4a5568;
             font-size: 14px;
+            font-weight: 600;
+            font-family: 'Plus Jakarta Sans', sans-serif;
+            cursor: pointer;
+            text-decoration: none;
             display: inline-flex;
             align-items: center;
             justify-content: center;
-            transition: all 0.2s ease;
+            transition: all 0.2s;
         }
-
         .btn-cancel:hover {
-            background-color: #f5f6fa;
-            color: var(--logout-red);
-            border-color: var(--logout-red);
+            border-color: #1e3a5f;
+            color: #1e3a5f;
+            background: #f8f9fa;
+        }
+        
+        @media (max-width: 500px) {
+            .feedback-card { padding: 28px 20px; }
+            .button-group { flex-direction: column; }
+            .btn-cancel { width: 100%; }
         }
     </style>
 </head>
 <body>
 
 <div class="navbar">
-    <div>CCS Sit-in Monitoring System</div>
+    <span>CCS Sit-in Monitoring System</span>
 </div>
 
 <div class="container">
     <div class="feedback-card">
-        
         <div class="feedback-header">
             <div class="icon-circle">
-                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>
+                <svg viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
             </div>
             <h2>Submit Feedback</h2>
-            <p>Help us improve your laboratory experience. Share your thoughts or report any workstation issues.</p>
+            <p class="subtitle">Help us improve your laboratory experience. Share your thoughts or report any workstation issues.</p>
         </div>
 
         <form action="save_feedback.php" method="POST">

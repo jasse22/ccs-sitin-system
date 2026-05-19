@@ -4,34 +4,44 @@ if (!isset($_SESSION['logged_in']) || $_SESSION['logged_in'] !== true) {
     header('Location: login.php'); exit;
 }
 require_once 'db.php';
+// Check if reservations are enabled
+$stmt = $pdo->prepare("SELECT setting_value FROM settings WHERE setting_key = 'reservations_enabled'");
+$stmt->execute();
+$reservations_enabled = $stmt->fetchColumn() === '1';
 
 $msg = ''; $msg_type = '';
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['reserve'])) {
-    $purpose = trim($_POST['purpose'] ?? '');
-    $lab     = trim($_POST['lab']     ?? '');
-    $time_in = trim($_POST['time_in'] ?? '');
-    $date    = trim($_POST['date']    ?? '');
-
-    if ($purpose && $lab && $date) {
-        // Check if student has remaining sessions
-        $sessStmt = $pdo->prepare("SELECT session FROM students WHERE id = ?");
-        $sessStmt->execute([$_SESSION['student_id']]);
-        $sessRow = $sessStmt->fetch();
-
-        if ($sessRow && $sessRow['session'] <= 0) {
-            $msg = 'You have no remaining sessions. Please contact the administrator.';
-            $msg_type = 'error';
-        } else {
-            $pdo->prepare("INSERT INTO reservations (student_id, id_number, purpose, laboratory, time_in, date, status)
-                           VALUES (?,?,?,?,?,?,'pending')")
-                ->execute([$_SESSION['student_id'], $_SESSION['id_number'], $purpose, $lab, $time_in ?: null, $date]);
-            $msg = 'Reservation submitted! Pending admin approval.';
-            $msg_type = 'success';
-        }
-    } else {
-        $msg = 'Please fill in all required fields.';
+    // Check if reservations are enabled
+    if (!$reservations_enabled) {
         $msg_type = 'error';
+    } else {
+        // Normal reservation processing
+        $purpose = trim($_POST['purpose'] ?? '');
+        $lab     = trim($_POST['lab']     ?? '');
+        $time_in = trim($_POST['time_in'] ?? '');
+        $date    = trim($_POST['date']    ?? '');
+
+        if ($purpose && $lab && $date) {
+            // Check if student has remaining sessions
+            $sessStmt = $pdo->prepare("SELECT session FROM students WHERE id = ?");
+            $sessStmt->execute([$_SESSION['student_id']]);
+            $sessRow = $sessStmt->fetch();
+
+            if ($sessRow && $sessRow['session'] <= 0) {
+                $msg = 'You have no remaining sessions. Please contact the administrator.';
+                $msg_type = 'error';
+            } else {
+                $pdo->prepare("INSERT INTO reservations (student_id, id_number, purpose, laboratory, time_in, date, status)
+                               VALUES (?,?,?,?,?,?,'pending')")
+                    ->execute([$_SESSION['student_id'], $_SESSION['id_number'], $purpose, $lab, $time_in ?: null, $date]);
+                $msg = 'Reservation submitted! Pending admin approval.';
+                $msg_type = 'success';
+            }
+        } else {
+            $msg = 'Please fill in all required fields.';
+            $msg_type = 'error';
+        }
     }
 }
 
@@ -61,6 +71,8 @@ nav{background:#1e3a5f;height:54px;padding:0 24px;display:flex;align-items:cente
 .nav-links a:hover,.nav-links a.active{color:#fff;background:rgba(255,255,255,0.1);}
 .btn-logout{background:#c53030 !important;color:#fff !important;font-weight:600 !important;border-radius:5px;padding:6px 14px !important;margin-left:6px;}
 .btn-logout:hover{background:#9b2c2c !important;}
+.btn-closed {background-color: #c53030 !important;color: white !important;cursor: not-allowed;}
+.btn-closed:hover {background-color: #9b2c2c !important;}
 .page-body{max-width:840px;margin:0 auto;padding:28px 20px 52px;}
 .page-title{font-size:19px;font-weight:700;color:#1e3a5f;margin-bottom:20px;text-align:center;}
 .alert{padding:10px 14px;border-radius:6px;font-size:13px;margin-bottom:18px;font-weight:500;}
@@ -98,13 +110,10 @@ tbody td{padding:9px 13px;font-size:13px;color:#4a5568;}
 </style>
 </head>
 <body>
-<nav>
+    <nav>
   <div class="nav-brand">CCS Sit-in Monitoring System</div>
   <div class="nav-links">
-   <a href="notifications.php">
-        Notifications 
-        <span id="notif-badge" style="display:none; background:#e63946; color:white; border-radius:10px; padding:2px 6px; font-size:10px; font-weight:bold;">0</span>
-    </a>
+    <?php include 'notif_dropdown.php'; ?>
     <a href="homepage.php">Home</a>
     <a href="profile.php">Edit Profile</a>
     <a href="history.php">History</a>
@@ -125,52 +134,78 @@ tbody td{padding:9px 13px;font-size:13px;color:#4a5568;}
     <div class="card-head"><h2>Reservation Form</h2></div>
     <div class="card-body">
       <form method="POST">
-        <div class="section-divider">Student Details</div>
-        <div class="field-row">
-          <div class="field">
+        <?php if (!$reservations_enabled): ?>
+    <div style="background:#fff5f5;border:1px solid #fed7d7;color:#c53030;padding:12px 16px;border-radius:6px;margin-bottom:18px;text-align:center;font-weight:600;">
+        🚫 Reservations are currently disabled by the administrator.
+    </div>
+<?php endif; ?>
+
+<form method="POST" <?= $reservations_enabled ? '' : 'style="opacity:0.5;pointer-events:none;"' ?>>
+    <!-- Your existing form fields here -->
+    <div class="section-divider">Student Details</div>
+    <div class="field-row">
+        <div class="field">
             <label>ID Number</label>
             <input type="text" value="<?= htmlspecialchars($_SESSION['id_number'] ?? '') ?>" readonly/>
-          </div>
-          <div class="field">
+        </div>
+        <div class="field">
             <label>Student Name</label>
             <input type="text" value="<?= htmlspecialchars($_SESSION['fullname'] ?? '') ?>" readonly/>
-          </div>
         </div>
-        <div class="section-divider">Reservation Details</div>
-        <div class="field-row">
-          <div class="field">
+    </div>
+    
+    <div class="section-divider">Reservation Details</div>
+    <div class="field-row">
+        <div class="field">
             <label>Purpose *</label>
             <input type="text" name="purpose" placeholder="e.g. C Programming, Thesis" required/>
-          </div>
-          <div class="field">
+        </div>
+        <div class="field">
             <label>Laboratory *</label>
             <input type="text" name="lab" placeholder="e.g. 524, 526" required/>
-          </div>
         </div>
-        <div class="section-divider">Schedule</div>
-        <div class="field-row">
-          <div class="field">
-            <label>Preferred Time</label>
-            <input type="time" name="time_in"/>
-          </div>
-          <div class="field">
-            <label>Date *</label>
-            <input type="date" name="date" min="<?= date('Y-m-d') ?>" required/>
-          </div>
-        </div>
-        <div class="section-divider">Session Info</div>
-        <div class="field">
-          <label>Remaining Sessions</label>
-          <?php $sess = (int)($_SESSION['session'] ?? 0); ?>
-          <div class="session-badge <?= $sess <= 5 ? 'low' : '' ?>">
-            🖥️ <?= $sess ?> session<?= $sess !== 1 ? 's' : '' ?> remaining
-          </div>
-        </div>
-        <button type="submit" name="reserve" class="btn-reserve">Submit Reservation</button>
-      </form>
     </div>
-  </div>
+<div class="section-divider">Schedule</div>
+<div class="field-row">
+    <div class="field">
+        <label>Preferred Time</label>
+        <select name="time_in" required style="width:100%;padding:9px 11px;border:1px solid #d0d7e2;border-radius:6px;font-size:13px;font-family:'Plus Jakarta Sans',sans-serif;color:#1e2a38;background:#fff;outline:none;">
+            <option value="">Select Time</option>
+            <option value="01:00:00">1:00 PM</option>
+            <option value="01:30:00">1:30 PM</option>
+            <option value="02:00:00">2:00 PM</option>
+            <option value="02:30:00">2:30 PM</option>
+            <option value="03:00:00">3:00 PM</option>
+            <option value="03:30:00">3:30 PM</option>
+            <option value="04:00:00">4:00 PM</option>
+            <option value="04:30:00">4:30 PM</option>
+            <option value="05:00:00">5:00 PM</option>
+            <option value="05:30:00">5:30 PM</option>
+        </select>
+    </div>
+    <div class="field">
+        <label>Date *</label>
+        <input type="date" name="date" min="<?= date('Y-m-d') ?>" required/>
+    </div>
+</div>
+<div style="display:flex;align-items:center;justify-content:flex-end;margin-top:8px;margin-bottom:4px;">
+    <button type="submit" name="reserve" 
+            class="btn-reserve <?= $reservations_enabled ? '' : 'btn-closed' ?>" 
+            <?= $reservations_enabled ? '' : 'disabled' ?>
+            style="margin-left:auto;">
+        <?= $reservations_enabled ? 'Submit Reservation' : 'Reservations Closed' ?>
+    </button>
+</div>
 
+<div class="section-divider">Session Info</div>
+<div class="field">
+    <label>Remaining Sessions</label>
+    <?php $sess = (int)($_SESSION['session'] ?? 0); ?>
+    <div class="session-badge <?= $sess <= 5 ? 'low' : '' ?>">
+        🖥️ <?= $sess ?> session<?= $sess !== 1 ? 's' : '' ?> remaining
+    </div>
+</div>
+    </div>
   <div class="card">
     <div class="card-head"><h2>My Reservations</h2></div>
     <table>
