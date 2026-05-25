@@ -399,7 +399,7 @@ nav{background:var(--nav-bg);height:54px;padding:0 24px;display:flex;align-items
 </style>
 </head>
 <body>
-  <?php include 'header.php'; ?>
+<?php include 'header.php'; ?>
 <div class="dashboard">
   <!-- LEFT CARD: Student Information -->
   <div class="card">
@@ -632,6 +632,8 @@ nav{background:var(--nav-bg);height:54px;padding:0 24px;display:flex;align-items
       </div>
     </div>
   </div>
+
+</div>
 
 <script>
 function toggleDropdown() {

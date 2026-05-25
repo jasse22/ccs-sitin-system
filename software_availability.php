@@ -116,13 +116,13 @@ if (!isset($_SESSION['logged_in']) || $_SESSION['logged_in'] !== true) {
         <div class="card-head"><h3>📋 Available Software</h3></div>
         <div class="card-body">
             <?php
-            // Fetch all software grouped by lab room
-            $stmt = $pdo->query("SELECT * FROM software ORDER BY lab_room, software_name");
-            $allSoftware = $stmt->fetchAll();
+            // Fetch uploaded software from software_uploads table
+            $stmt = $pdo->query("SELECT * FROM software_uploads ORDER BY lab_room, software_name");
+            $uploads = $stmt->fetchAll();
             
             // Group software by lab room
             $softwareByLab = [];
-            foreach ($allSoftware as $sw) {
+            foreach ($uploads as $sw) {
                 $lab = $sw['lab_room'];
                 if (!isset($softwareByLab[$lab])) {
                     $softwareByLab[$lab] = [];
@@ -131,7 +131,7 @@ if (!isset($_SESSION['logged_in']) || $_SESSION['logged_in'] !== true) {
             }
             ?>
             
-            <?php if ($allSoftware): ?>
+            <?php if ($uploads): ?>
                 <?php foreach ($softwareByLab as $lab => $softwareList): ?>
                 <div class="lab-section">
                     <div class="lab-header">🔬 Lab <?= htmlspecialchars($lab) ?> (<?= count($softwareList) ?> software)</div>
@@ -143,6 +143,13 @@ if (!isset($_SESSION['logged_in']) || $_SESSION['logged_in'] !== true) {
                             <div class="software-lab"><span>📍 Lab <?= htmlspecialchars($sw['lab_room']) ?></span></div>
                             <?php if (!empty($sw['description'])): ?>
                             <div class="software-desc"><?= htmlspecialchars($sw['description']) ?></div>
+                            <?php endif; ?>
+                            <?php if (!empty($sw['file_path']) && file_exists($sw['file_path'])): ?>
+                                <div style="margin-top:6px;">
+                                    <a href="<?= htmlspecialchars($sw['file_path']) ?>" download style="display:inline-block;padding:4px 12px;border-radius:4px;background:#1e3a5f;color:#fff;text-decoration:none;font-size:12px;font-weight:600;transition:background 0.2s;">
+                                        📥 Download
+                                    </a>
+                                </div>
                             <?php endif; ?>
                         </div>
                         <?php endforeach; ?>

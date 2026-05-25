@@ -86,71 +86,54 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $pdo->exec("UPDATE students SET session = 30");
         header('Location: admin_dashboard.php?page=students&msg=all_reset'); exit;
     }
-    // Sit-in (registered student OR walk-in)
-if (isset($_POST['do_sitin'])) {
-    $id_num  = trim($_POST['id_number']    ?? '');
-    $name    = trim($_POST['student_name'] ?? '');
-    $purpose = trim($_POST['purpose']      ?? '');
-    $lab     = trim($_POST['lab']          ?? '');
-    $pc_num  = (int)($_POST['pc_number']   ?? 0);
 
-    if (!$id_num || !$name || !$purpose || !$lab || !$pc_num) {
-        header('Location: admin_dashboard.php?page=sitin&msg=sitin_err'); exit;
-    }
-    try {
-    echo "<h3>Debug Mode - Sit-in Process</h3>";
-    echo "ID Number: " . $id_num . "<br>";
-    echo "Name: " . $name . "<br>";
-    echo "Purpose: " . $purpose . "<br>";
-    echo "Lab: " . $lab . "<br>";
-    echo "PC Number: " . $pc_num . "<br>";
-    
-    // Check if student exists
-    $stu = $pdo->prepare("SELECT * FROM students WHERE id_number = ? LIMIT 1");
-    $stu->execute([$id_num]);
-    $found = $stu->fetch();
-    
-    if ($found) {
-        echo "Student found: " . $found['firstname'] . " " . $found['lastname'] . "<br>";
-        echo "Current sessions: " . $found['session'] . "<br>";
-        
-        if ($found['session'] <= 0) {
-            die("Student has no remaining sessions.");
+    // Sit-in (registered student OR walk-in)
+    if (isset($_POST['do_sitin'])) {
+        $id_num  = trim($_POST['id_number']    ?? '');
+        $name    = trim($_POST['student_name'] ?? '');
+        $purpose = trim($_POST['purpose']      ?? '');
+        $lab     = trim($_POST['lab']          ?? '');
+        $pc_num  = (int)($_POST['pc_number']   ?? 0);
+
+        if (!$id_num || !$name || !$purpose || !$lab || !$pc_num) {
+            header('Location: admin_dashboard.php?page=sitin&msg=sitin_err');
+            exit;
         }
-        
-        // Deduct session
-        $update = $pdo->prepare("UPDATE students SET session = session - 1 WHERE id = ? AND session > 0");
-        $update->execute([$found['id']]);
-        echo "Session deducted!<br>";
-        
-        // Insert sit-in record
-        $insert = $pdo->prepare("INSERT INTO sit_in_history (student_id, id_number, fullname, sit_purpose, laboratory, pc_number, login_time, date) VALUES (?,?,?,?,?,?,NOW(),CURDATE())");
-        $result = $insert->execute([$found['id'], $id_num, $name, $purpose, $lab, $pc_num]);
-        echo "Sit-in record inserted: " . ($result ? "YES" : "NO") . "<br>";
-    } else {
-        echo "Student NOT found in database - treating as walk-in.<br>";
-        
-        // Insert walk-in record
-        $insert = $pdo->prepare("INSERT INTO sit_in_history (student_id, id_number, fullname, sit_purpose, laboratory, pc_number, login_time, date) VALUES (NULL,?,?,?,?,?,NOW(),CURDATE())");
-        $result = $insert->execute([$id_num, $name, $purpose, $lab, $pc_num]);
-        echo "Walk-in record inserted: " . ($result ? "YES" : "NO") . "<br>";
+
+        try {
+            // Check if student exists
+            $stu = $pdo->prepare("SELECT * FROM students WHERE id_number = ? LIMIT 1");
+            $stu->execute([$id_num]);
+            $found = $stu->fetch();
+
+            if ($found) {
+                if ($found['session'] <= 0) {
+                    header('Location: admin_dashboard.php?page=sitin&msg=no_session');
+                    exit;
+                }
+                // Deduct session
+                $pdo->prepare("UPDATE students SET session = session - 1 WHERE id = ? AND session > 0")
+                    ->execute([$found['id']]);
+                
+                // Insert sit-in record
+                $pdo->prepare("INSERT INTO sit_in_history (student_id, id_number, fullname, sit_purpose, laboratory, pc_number, login_time, date) VALUES (?,?,?,?,?,?,NOW(),CURDATE())")
+                    ->execute([$found['id'], $id_num, $name, $purpose, $lab, $pc_num]);
+            } else {
+                // Walk-in student
+                $pdo->prepare("INSERT INTO sit_in_history (student_id, id_number, fullname, sit_purpose, laboratory, pc_number, login_time, date) VALUES (NULL,?,?,?,?,?,NOW(),CURDATE())")
+                    ->execute([$id_num, $name, $purpose, $lab, $pc_num]);
+            }
+        } catch (PDOException $e) {
+            // Log error but don't show debug screen
+            error_log('Sit-in error: ' . $e->getMessage());
+            header('Location: admin_dashboard.php?page=sitin&msg=db_error');
+            exit;
+        }
+
+        header('Location: admin_dashboard.php?page=sitin&msg=sittin');
+        exit;
     }
-    
-    echo "<h3>✅ Success! All operations completed.</h3>";
-    echo "<a href='admin_dashboard.php?page=sitin'>Go back to Sit-in page</a>";
-    exit;
-    
-} catch (PDOException $e) {
-    echo "<h3>❌ Database Error</h3>";
-    echo "<strong>Error Message:</strong> " . $e->getMessage() . "<br>";
-    echo "<strong>Error Code:</strong> " . $e->getCode() . "<br>";
-    echo "<strong>File:</strong> " . $e->getFile() . "<br>";
-    echo "<strong>Line:</strong> " . $e->getLine() . "<br>";
-    echo "<br><a href='admin_dashboard.php?page=sitin'>Go back to Sit-in page</a>";
-    exit;
-}
-    header('Location: admin_dashboard.php?page=sitin&msg=sittin'); exit;
-}
+
     // Logout a sit-in record
     if (isset($_POST['logout_sitin'])) {
         // Update logout time - no PC table needed
@@ -159,7 +142,7 @@ if (isset($_POST['do_sitin'])) {
         
         header('Location: admin_dashboard.php?page=sitin&msg=logout'); exit;
     }
-}
+
     // Approve reservation
     if (isset($_POST['approve_reservation'])) {
         $rid = (int)$_POST['reservation_id'];
@@ -198,6 +181,7 @@ if (isset($_POST['do_sitin'])) {
             ->execute([$new_value]);
         header('Location: admin_dashboard.php?page=reservation&msg=toggled'); exit;
     }
+}
 
 // ── Fetch data ───────────────────────────────────────────────
 $total_students  = (int)$pdo->query("SELECT COUNT(*) FROM students")->fetchColumn();
