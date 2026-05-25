@@ -71,27 +71,52 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 <meta charset="UTF-8"/><meta name="viewport" content="width=device-width, initial-scale=1.0"/>
 <title>CCS | Admin Login</title>
 <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap" rel="stylesheet"/>
+<script src="darkmode.js"></script>
 <style>
+:root {
+    --bg-color: #f7f8fa;
+    --text-color: #1e2a38;
+    --card-bg: #ffffff;
+    --nav-bg: #1e3a5f;
+    --border-color: #e2e6ea;
+    --shadow: 0 4px 12px rgba(0,0,0,0.08);
+    --input-bg: #ffffff;
+    --input-border: #d0d7e2;
+    --hover-bg: #f0f4f9;
+}
+
+body.dark-mode {
+    --bg-color: #1a1f2e;
+    --text-color: #e8edf5;
+    --card-bg: #242b3d;
+    --nav-bg: #141824;
+    --border-color: #2e364a;
+    --shadow: 0 4px 12px rgba(0,0,0,0.3);
+    --input-bg: #242b3d;
+    --input-border: #2e364a;
+    --hover-bg: #2a3248;
+}
+
 *{box-sizing:border-box;margin:0;padding:0;}
-body{font-family:'Plus Jakarta Sans',sans-serif;background:#f7f8fa;min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px 16px;}
+body{font-family:'Plus Jakarta Sans',sans-serif;background:var(--bg-color);color:var(--text-color);min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px 16px;transition:background 0.3s, color 0.3s;}
 .wrap{width:100%;max-width:400px;}
 .header{text-align:center;margin-bottom:24px;}
 .header img{width:80px;height:80px;border-radius:50%;border:2px solid #c5d5e8;object-fit:cover;}
 .header h1{font-size:18px;font-weight:700;color:#1e3a5f;margin-top:12px;}
 .header p{font-size:12px;color:#9aa5b4;margin-top:3px;}
 .admin-badge{display:inline-block;background:#1e3a5f;color:#fff;font-size:10px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;padding:4px 14px;border-radius:20px;margin-top:8px;}
-.card{background:#fff;border:1px solid #e2e6ea;border-radius:12px;overflow:hidden;box-shadow:0 4px 20px rgba(0,0,0,0.06);}
-.card-top{background:linear-gradient(135deg, #1e3a5f, #2a5a8a);padding:16px 22px;}
+.card{background:var(--card-bg);border:1px solid var(--border-color);border-radius:12px;overflow:hidden;box-shadow:var(--shadow);transition:background 0.3s, border-color 0.3s;}
+.card-top{background:var(--nav-bg);padding:16px 22px;}
 .card-top h2{color:#fff;font-size:14px;font-weight:700;}
 .card-top p{color:rgba(255,255,255,0.45);font-size:12px;margin-top:2px;}
 .card-body{padding:28px 24px 30px;}
 .alert-error{background:#fff5f5;border:1px solid #fed7d7;color:#c53030;padding:10px 13px;border-radius:6px;font-size:13px;margin-bottom:18px;}
 .field{margin-bottom:16px;}
 .field label{display:block;font-size:11px;font-weight:700;color:#4a5568;margin-bottom:5px;text-transform:uppercase;letter-spacing:0.04em;}
-.field input{width:100%;padding:10px 14px;border:1px solid #d0d7e2;border-radius:8px;font-size:13.5px;font-family:'Plus Jakarta Sans',sans-serif;color:#1e2a38;background:#fff;outline:none;transition:border-color .15s;}
+.field input{width:100%;padding:10px 14px;border:1px solid var(--input-border);border-radius:8px;font-size:13.5px;font-family:'Plus Jakarta Sans',sans-serif;color:var(--text-color);background:var(--input-bg);outline:none;transition:border-color .15s;}
 .field input:focus{border-color:#1e3a5f;box-shadow:0 0 0 3px rgba(30,58,95,0.08);}
 .field input::placeholder{color:#b0bac8;}
-.btn{width:100%;padding:11px;border:none;border-radius:8px;background:#1e3a5f;color:#fff;font-size:13.5px;font-weight:600;font-family:'Plus Jakarta Sans',sans-serif;cursor:pointer;transition:background .15s;margin-top:4px;}
+.btn{width:100%;padding:11px;border:none;border-radius:8px;background:var(--nav-bg);color:#fff;font-size:13.5px;font-weight:600;font-family:'Plus Jakarta Sans',sans-serif;cursor:pointer;transition:background .15s;margin-top:4px;}
 .btn:hover{background:#16304f;}
 .back-link{text-align:center;margin-top:16px;font-size:13px;color:#9aa5b4;}
 .back-link a{color:#1e3a5f;font-weight:600;text-decoration:none;}
@@ -99,6 +124,7 @@ body{font-family:'Plus Jakarta Sans',sans-serif;background:#f7f8fa;min-height:10
 </style>
 </head>
 <body>
+    <link rel="stylesheet" href="style.css">
 <div class="wrap">
   <div class="header">
     <img src="Uclogo.png" alt="UC Logo"/>

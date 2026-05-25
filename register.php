@@ -2,54 +2,48 @@
 session_start();
 require_once 'db.php';
 
+// If already logged in, redirect
 if (isset($_SESSION['logged_in']) && $_SESSION['logged_in'] === true) {
-    header('Location: homepage.php'); exit;
+    header('Location: homepage.php');
+    exit;
+}
+if (isset($_SESSION['admin_logged_in']) && $_SESSION['admin_logged_in'] === true) {
+    header('Location: admin_dashboard.php');
+    exit;
 }
 
-$error = ''; $success = '';
+$error = '';
 
+// Handle registration
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    $id_number  = trim($_POST['id_number']  ?? '');
-    $lastname   = trim($_POST['lastname']   ?? '');
-    $firstname  = trim($_POST['firstname']  ?? '');
+    $lastname = trim($_POST['lastname'] ?? '');
+    $firstname = trim($_POST['firstname'] ?? '');
     $middlename = trim($_POST['middlename'] ?? '');
-    $email      = trim($_POST['email']      ?? '');
-    $address    = trim($_POST['address']    ?? '');
-    $course     = trim($_POST['course']     ?? '');
-    $year_level = trim($_POST['year_level'] ?? '');
-    $password   = $_POST['password']          ?? '';
-    $confirm_pw = $_POST['confirm_password']  ?? '';
+    $id_number = trim($_POST['id_number'] ?? '');
+    $year_level = (int)($_POST['year_level'] ?? 1);
+    $course = trim($_POST['course'] ?? '');
+    $password = trim($_POST['password'] ?? '');
+    $confirm_password = trim($_POST['confirm_password'] ?? '');
+    $email = trim($_POST['email'] ?? '');
+    $address = trim($_POST['address'] ?? '');
 
-    if (!$id_number || !$lastname || !$firstname || !$email || !$course || !$year_level || !$password) {
-        $error = 'Please fill in all required fields.';
-    } elseif (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
-        $error = 'Please enter a valid email address.';
-    } elseif (strlen($password) < 6) {
-        $error = 'Password must be at least 6 characters.';
-    } elseif ($password !== $confirm_pw) {
-        $error = 'Passwords do not match.';
+    if ($password !== $confirm_password) {
+        $error = "❌ Passwords do not match.";
     } else {
-        $s = $pdo->prepare("SELECT id FROM students WHERE id_number = ? LIMIT 1");
-        $s->execute([$id_number]);
-        if ($s->fetch()) {
-            $error = 'ID Number is already registered.';
-        } else {
-            $s = $pdo->prepare("SELECT id FROM students WHERE email = ? LIMIT 1");
-            $s->execute([$email]);
-            if ($s->fetch()) {
-                $error = 'Email address is already registered.';
+        try {
+            // Check if ID number already exists
+            $check = $pdo->prepare("SELECT id FROM students WHERE id_number = ?");
+            $check->execute([$id_number]);
+            if ($check->fetch()) {
+                $error = "❌ ID number already exists.";
             } else {
-                $pdo->prepare("INSERT INTO students
-                    (id_number, lastname, firstname, middlename, course, year_level, email, password, address, session)
-                    VALUES (?,?,?,?,?,?,?,?,?,30)")
-                    ->execute([
-                        $id_number, $lastname, $firstname, $middlename,
-                        $course, $year_level, $email,
-                        password_hash($password, PASSWORD_DEFAULT),
-                        $address
-                    ]);
-                $success = 'Account created! You can now log in.';
+                $hashed = password_hash($password, PASSWORD_DEFAULT);
+                $stmt = $pdo->prepare("INSERT INTO students (id_number, lastname, firstname, middlename, course, year_level, email, address, password, session) VALUES (?,?,?,?,?,?,?,?,?,30)");
+                $stmt->execute([$id_number, $lastname, $firstname, $middlename, $course, $year_level, $email, $address, $hashed]);
+                $success = "✅ Account created successfully! You can now login.";
             }
+        } catch (PDOException $e) {
+            $error = "❌ Registration failed: " . $e->getMessage();
         }
     }
 }
@@ -57,255 +51,527 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8"/><meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-<title>CCS | Register</title>
-<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap" rel="stylesheet"/>
-<style>
-*{box-sizing:border-box;margin:0;padding:0;}
-body{font-family:'Plus Jakarta Sans',sans-serif;background:#f7f8fa;color:#1e2a38;min-height:100vh;font-size:14px;}
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CCS | Create Account</title>
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <script src="darkmode.js"></script>
+    <style>
+        :root {
+            --bg-color: #f7f8fa;
+            --text-color: #1e2a38;
+            --card-bg: #ffffff;
+            --nav-bg: #1e3a5f;
+            --border-color: #e2e6ea;
+            --shadow: 0 4px 12px rgba(0,0,0,0.08);
+            --input-bg: #ffffff;
+            --input-border: #d0d7e2;
+        }
 
-nav{background:#1e3a5f;height:54px;padding:0 24px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:100;}
-.nav-brand{display:flex;align-items:center;gap:9px;text-decoration:none;}
-.nav-brand img{width:30px;height:30px;border-radius:50%;object-fit:cover;}
-.nav-brand-text{font-size:13.5px;font-weight:700;color:#fff;line-height:1.2;}
-.nav-brand-sub{font-size:10px;color:rgba(255,255,255,0.45);}
-.nav-links{display:flex;align-items:center;gap:1px;}
-.nav-links a{font-size:13px;color:rgba(255,255,255,0.7);text-decoration:none;padding:6px 10px;border-radius:5px;transition:all .15s;}
-.nav-links a:hover{color:#fff;background:rgba(255,255,255,0.1);}
-.btn-login-nav{border:1px solid rgba(255,255,255,0.2);}
+        body.dark-mode {
+            --bg-color: #1a1f2e;
+            --text-color: #e8edf5;
+            --card-bg: #242b3d;
+            --nav-bg: #141824;
+            --border-color: #2e364a;
+            --shadow: 0 4px 12px rgba(0,0,0,0.3);
+            --input-bg: #2c303a;
+            --input-border: #2e364a;
+        }
 
-.auth-page{min-height:calc(100vh - 54px);display:flex;align-items:center;justify-content:center;padding:32px 16px;}
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: 'Plus Jakarta Sans', sans-serif;
+            background: var(--bg-color);
+            color: var(--text-color);
+            min-height: 100vh;
+            transition: background 0.3s, color 0.3s;
+        }
 
-.reg-box{background:#fff;border:1px solid #e2e6ea;border-radius:12px;width:100%;max-width:560px;overflow:hidden;box-shadow:0 4px 20px rgba(0,0,0,0.07);}
-.reg-header{background:linear-gradient(135deg, #1e3a5f, #2a5a8a);padding:20px 28px;display:flex;align-items:center;gap:14px;}
-.reg-header img{width:44px;height:44px;border-radius:50%;border:2px solid rgba(255,255,255,0.25);object-fit:cover;}
-.reg-header h2{color:#fff;font-size:18px;font-weight:700;}
-.reg-header p{color:rgba(255,255,255,0.5);font-size:12px;margin-top:2px;}
-.reg-body{padding:30px 30px 32px;}
+        nav {
+            background: var(--nav-bg);
+            height: 54px;
+            padding: 0 24px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            position: sticky;
+            top: 0;
+            z-index: 100;
+            transition: background 0.3s;
+        }
+        .nav-brand {
+            font-size: 13px;
+            font-weight: 700;
+            color: #fff;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .nav-brand svg {
+            width: 20px;
+            height: 20px;
+            stroke: #fff;
+        }
+        .nav-links {
+            display: flex;
+            align-items: center;
+            gap: 1px;
+        }
+        .nav-links a {
+            font-size: 13px;
+            color: rgba(255,255,255,0.7);
+            text-decoration: none;
+            padding: 6px 10px;
+            border-radius: 5px;
+            transition: all .15s;
+            white-space: nowrap;
+        }
+        .nav-links a:hover, .nav-links a.active {
+            color: #fff;
+            background: rgba(255,255,255,0.1);
+        }
+        .btn-login {
+            background: #2563a8;
+            color: #fff;
+            border-radius: 5px;
+            padding: 6px 14px;
+            font-weight: 600;
+        }
+        .btn-login:hover {
+            background: #1d4f8a;
+        }
 
-.alert{padding:12px 16px;border-radius:8px;font-size:13px;margin-bottom:20px;font-weight:500;}
-.alert-error{background:#fff5f5;border:1px solid #fed7d7;color:#c53030;}
-.alert-success{background:#f0fff4;border:1px solid #9ae6b4;color:#276749;}
+        .page-body {
+            max-width: 600px;
+            margin: 0 auto;
+            padding: 30px 20px 52px;
+        }
 
-.field{display:flex;flex-direction:column;margin-bottom:14px;}
-.field input,.field select{
-    padding:10px 14px;
-    border:1px solid #d0d7e2;
-    border-radius:8px;
-    font-size:13px;
-    font-family:'Plus Jakarta Sans',sans-serif;
-    color:#1e2a38;
-    background:#fff;
-    outline:none;
-    transition:border-color .15s, box-shadow .15s;
-    width:100%;
-}
-.field input:focus,.field select:focus{border-color:#1e3a5f;box-shadow:0 0 0 3px rgba(30,58,95,0.08);}
-.field input::placeholder{color:#b0bac8;}
-.field label{
-    font-size:12px;
-    font-weight:500;
-    color:#4a5568;
-    margin-top:5px;
-}
-.field label .req{color:#e53e3e;margin-left:2px;}
+        .card {
+            background: var(--card-bg);
+            border-radius: 12px;
+            box-shadow: var(--shadow);
+            overflow: hidden;
+            border: 1px solid var(--border-color);
+            transition: background 0.3s, border-color 0.3s, box-shadow 0.3s;
+        }
+        .card-head {
+            background: var(--nav-bg);
+            padding: 20px 24px;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+        .card-head h2 {
+            color: #fff;
+            font-size: 18px;
+            font-weight: 700;
+        }
+        .card-head p {
+            color: rgba(255,255,255,0.6);
+            font-size: 13px;
+            margin-top: 2px;
+        }
+        .card-head .logo-small {
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            background: #fff;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 700;
+            color: #1e3a5f;
+            font-size: 16px;
+        }
 
-.field-row{display:grid;grid-template-columns:1fr 1fr;gap:14px;}
-.field-row3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px;}
+        .form-body {
+            padding: 24px;
+        }
 
-.reg-footer{display:flex;gap:10px;margin-top:24px;}
-.btn-back{
-    padding:10px 20px;
-    border-radius:8px;
-    background:#8b1a1a;
-    border:none;
-    color:#fff;
-    font-size:13px;
-    font-weight:600;
-    font-family:'Plus Jakarta Sans',sans-serif;
-    cursor:pointer;
-    transition:background .15s;
-    text-decoration:none;
-    display:flex;
-    align-items:center;
-}
-.btn-back:hover{background:#6e1414;}
-.btn-submit{
-    flex:1;
-    padding:11px;
-    border:none;
-    border-radius:8px;
-    background:#1e3a5f;
-    color:#fff;
-    font-size:14px;
-    font-weight:700;
-    font-family:'Plus Jakarta Sans',sans-serif;
-    cursor:pointer;
-    transition:background .15s;
-}
-.btn-submit:hover{background:#16304f;}
+        .field-row {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 12px;
+        }
+        .field-row-3 {
+            display: grid;
+            grid-template-columns: 1fr 1fr 1fr;
+            gap: 12px;
+        }
 
-.alt-line{text-align:center;margin-top:14px;font-size:13px;color:#9aa5b4;}
-.alt-line a{color:#1e3a5f;font-weight:600;text-decoration:none;}
-.alt-line a:hover{text-decoration:underline;}
+        .field {
+            margin-bottom: 12px;
+        }
+        .field label {
+            display: block;
+            font-size: 12px;
+            font-weight: 600;
+            color: var(--text-color);
+            margin-bottom: 4px;
+            transition: color 0.3s;
+        }
+        .field input, .field select {
+            width: 100%;
+            padding: 10px 12px;
+            border: 1px solid var(--input-border);
+            border-radius: 6px;
+            font-size: 14px;
+            font-family: inherit;
+            background: var(--input-bg);
+            color: var(--text-color);
+            outline: none;
+            transition: all 0.3s;
+        }
+        .field input:focus, .field select:focus {
+            border-color: var(--nav-bg);
+            box-shadow: 0 0 0 3px rgba(30,58,95,0.1);
+        }
 
-@media(max-width:600px){nav{padding:0 14px;}.reg-body{padding:20px;}.field-row,.field-row3{grid-template-columns:1fr;}}
-</style>
+        .btn {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 6px;
+            font-size: 14px;
+            font-weight: 600;
+            font-family: inherit;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .btn-back {
+            background: #dc3545;
+            color: #fff;
+        }
+        .btn-back:hover {
+            background: #c82333;
+        }
+        .btn-register {
+            background: #1e3a5f;
+            color: #fff;
+            width: 100%;
+        }
+        .btn-register:hover {
+            background: #16304f;
+        }
+
+        .btn-row {
+            display: flex;
+            gap: 12px;
+            margin-top: 8px;
+        }
+
+        .alert {
+            padding: 10px 14px;
+            border-radius: 6px;
+            margin-bottom: 16px;
+            font-size: 13px;
+        }
+        .alert-error {
+            background: #fee2e2;
+            color: #dc2626;
+            border: 1px solid #fecaca;
+        }
+        .alert-success {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #b7ebc5;
+        }
+        body.dark-mode .alert-error {
+            background: #2c303a;
+            color: #ef4444;
+            border-color: #4a4d57;
+        }
+        body.dark-mode .alert-success {
+            background: #2c303a;
+            color: #7aa2f7;
+            border-color: #4a4d57;
+        }
+
+        .login-link {
+            text-align: center;
+            margin-top: 16px;
+            font-size: 13px;
+            color: #9aa5b4;
+        }
+        .login-link a {
+            color: #1e3a5f;
+            text-decoration: none;
+            font-weight: 600;
+        }
+        .login-link a:hover {
+            text-decoration: underline;
+        }
+        body.dark-mode .login-link a {
+            color: #7aa2f7;
+        }
+
+        @media (max-width: 600px) {
+            .field-row, .field-row-3 {
+                grid-template-columns: 1fr;
+            }
+            nav { padding: 0 14px; }
+        }
+    </style>
 </head>
 <body>
 
 <nav>
-  <a class="nav-brand" href="index.php">
-    <img src="Uclogo.png" alt="UC Logo"/>
-    <div>
-      <div class="nav-brand-text">College of Computer Studies</div>
-      <div class="nav-brand-sub">Sit-in Monitoring System</div>
+    <div class="nav-brand">
+        <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
+        College of Computer Studies
     </div>
-  </a>
-  <div class="nav-links">
-    <a href="index.php">Home</a>
-    <a href="#" onclick="openAboutModal();return false;">About</a>
-    <a href="login.php" class="btn-login-nav">Login</a>
-  </div>
+    <div class="nav-links">
+        <a href="index.php">Home</a>
+        <a href="#">About</a>
+        <a href="#" onclick="openLoginModal()" class="btn-login">Login</a>
+        <button onclick="toggleDarkMode()" style="background:none;border:none;color:rgba(255,255,255,0.7);cursor:pointer;font-size:16px;padding:6px 10px;border-radius:5px;">
+            🌙
+        </button>
+    </div>
 </nav>
 
-<div class="auth-page">
-  <div class="reg-box">
-    <div class="reg-header">
-      <img src="Uclogo.png" alt="UC Logo"/>
-      <div>
-        <h2>Create Account</h2>
-        <p>CCS Sit-in Monitoring System</p>
-      </div>
-    </div>
-
-    <div class="reg-body">
-      <?php if ($error): ?>
-        <div class="alert alert-error">⚠️ <?= htmlspecialchars($error) ?></div>
-      <?php endif; ?>
-      <?php if ($success): ?>
-        <div class="alert alert-success">
-          ✅ <?= htmlspecialchars($success) ?>
-          <a href="login.php" style="color:#276749;font-weight:700;margin-left:4px;">Sign in →</a>
+<div class="page-body">
+    <div class="card">
+        <div class="card-head">
+            <div class="logo-small">UC</div>
+            <div>
+                <h2>Create Account</h2>
+                <p>CCS Sit-in Monitoring System</p>
+            </div>
         </div>
-      <?php endif; ?>
+        <div class="form-body">
+            <?php if (isset($error)): ?>
+                <div class="alert alert-error"><?= $error ?></div>
+            <?php endif; ?>
+            <?php if (isset($success)): ?>
+                <div class="alert alert-success"><?= $success ?></div>
+            <?php endif; ?>
 
-      <form method="POST" action="register.php">
+            <form method="POST">
+                <div class="field-row-3">
+                    <div class="field">
+                        <label>Last Name</label>
+                        <input type="text" name="lastname" placeholder="Last Name" required>
+                    </div>
+                    <div class="field">
+                        <label>First Name</label>
+                        <input type="text" name="firstname" placeholder="First Name" required>
+                    </div>
+                    <div class="field">
+                        <label>Middle Name</label>
+                        <input type="text" name="middlename" placeholder="Middle Name">
+                    </div>
+                </div>
 
-        <!-- Name Fields -->
-        <div class="field-row3">
-          <div class="field">
-            <input type="text" name="lastname" value="<?= htmlspecialchars($_POST['lastname'] ?? '') ?>" placeholder="Last Name" required/>
-            <label>Last Name</label>
-          </div>
-          <div class="field">
-            <input type="text" name="firstname" value="<?= htmlspecialchars($_POST['firstname'] ?? '') ?>" placeholder="First Name" required/>
-            <label>First Name</label>
-          </div>
-          <div class="field">
-            <input type="text" name="middlename" value="<?= htmlspecialchars($_POST['middlename'] ?? '') ?>" placeholder="Middle Name"/>
-            <label>Middle Name</label>
-          </div>
-        </div>
+                <div class="field-row">
+                    <div class="field">
+                        <label>ID Number</label>
+                        <input type="text" name="id_number" placeholder="ID Number" required>
+                    </div>
+                    <div class="field">
+                        <label>Year Level</label>
+                        <select name="year_level">
+                            <option value="1">1st Year</option>
+                            <option value="2">2nd Year</option>
+                            <option value="3">3rd Year</option>
+                            <option value="4">4th Year</option>
+                        </select>
+                    </div>
+                </div>
 
-        <!-- ID Number & Year Level -->
-        <div class="field-row">
-          <div class="field">
-            <input type="text" name="id_number" value="<?= htmlspecialchars($_POST['id_number'] ?? '') ?>" placeholder="ID Number" required/>
-            <label>ID Number</label>
-          </div>
-          <div class="field">
-            <select name="year_level" required>
-              <option value="">Year Level</option>
-              <?php foreach(['1st Year'=>1,'2nd Year'=>2,'3rd Year'=>3,'4th Year'=>4] as $l=>$v): ?>
-                <option value="<?=$v?>" <?=($_POST['year_level']??'')==$v?'selected':''?>><?=$l?></option>
-              <?php endforeach; ?>
-            </select>
-            <label>Year Level</label>
-          </div>
-        </div>
+                <div class="field">
+                    <label>Course</label>
+                    <select name="course" required>
+                        <option value="">Select Course</option>
+                        <option value="BSIT">BSIT</option>
+                        <option value="BSCS">BSCS</option>
+                        <option value="BSDA">BSDA</option>
+                        <option value="ACT">ACT</option>
+                    </select>
+                </div>
 
-        <!-- Course -->
-        <div class="field">
-          <select name="course" required>
-            <option value="">Select Course</option>
-            <?php foreach(['BSIT','BSCS','BSCA'] as $c): ?>
-              <option value="<?=$c?>" <?=($_POST['course']??'')===$c?'selected':''?>><?=$c?></option>
-            <?php endforeach; ?>
-          </select>
-          <label>Course</label>
-        </div>
+                <div class="field-row">
+                    <div class="field">
+                        <label>Password</label>
+                        <input type="password" name="password" placeholder="Password" required>
+                    </div>
+                    <div class="field">
+                        <label>Confirm Password</label>
+                        <input type="password" name="confirm_password" placeholder="Confirm Password" required>
+                    </div>
+                </div>
 
-        <!-- Password Fields -->
-        <div class="field-row">
-          <div class="field">
-            <input type="password" name="password" placeholder="Password" required/>
-            <label>Password</label>
-          </div>
-          <div class="field">
-            <input type="password" name="confirm_password" placeholder="Confirm Password" required/>
-            <label>Confirm Password</label>
-          </div>
-        </div>
+                <div class="field-row">
+                    <div class="field">
+                        <label>Email Address</label>
+                        <input type="email" name="email" placeholder="Email" required>
+                    </div>
+                    <div class="field">
+                        <label>Current Address</label>
+                        <input type="text" name="address" placeholder="Address">
+                    </div>
+                </div>
 
-        <!-- Email & Address -->
-        <div class="field-row">
-          <div class="field">
-            <input type="email" name="email" value="<?= htmlspecialchars($_POST['email'] ?? '') ?>" placeholder="Email Address" required/>
-            <label>Email</label>
-          </div>
-          <div class="field">
-            <input type="text" name="address" value="<?= htmlspecialchars($_POST['address'] ?? '') ?>" placeholder="Current Address"/>
-            <label>Address</label>
-          </div>
-        </div>
+                <div class="btn-row">
+                    <button type="button" class="btn btn-back" onclick="window.location.href='index.php'">← Back</button>
+                    <button type="submit" class="btn btn-register">Register</button>
+                </div>
+            </form>
 
-        <!-- Buttons -->
-        <div class="reg-footer">
-          <a href="login.php" class="btn-back">← Back</a>
-          <button type="submit" class="btn-submit">Register</button>
+            <div class="login-link">
+                Already have an account? <a href="#" onclick="openLoginModal()">Sign In</a>
+            </div>
         </div>
-
-        <p class="alt-line">Already have an account? <a href="login.php">Sign in</a></p>
-      </form>
-    </div>
-  </div>
-</div>
-<!-- About Modal -->
-<div id="aboutModal" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.5);z-index:9999;align-items:center;justify-content:center;">
-    <div style="background:#fff;border-radius:12px;max-width:500px;width:90%;padding:30px;position:relative;box-shadow:0 4px 20px rgba(0,0,0,0.3);">
-        <span onclick="closeAboutModal()" style="position:absolute;top:15px;right:20px;font-size:24px;cursor:pointer;color:#9aa5b4;">&times;</span>
-        
-        <div style="text-align:center;margin-bottom:20px;">
-            <img src="Uclogo.png" alt="UC Logo" style="width:60px;height:60px;border-radius:50%;object-fit:cover;">
-            <h2 style="color:#1e3a5f;margin-top:10px;">About CCS Sit-in System</h2>
-        </div>
-        
-        <div style="font-size:14px;color:#4a5568;line-height:1.8;">
-            <p><strong>Version:</strong> 1.0.0</p>
-            <p><strong>College of Computer Studies</strong></p>
-            <p><strong>University of Cebu - Main Campus</strong></p>
-            <p style="margin-top:15px;">This Sit-in Monitoring System allows students to reserve laboratory slots, track their sit-in sessions, and receive announcements from the administration.</p>
-            <p style="margin-top:10px;font-size:12px;color:#9aa5b4;">&copy; 2026 College of Computer Studies</p>
-        </div>
-        
-        <button onclick="closeAboutModal()" style="display:block;width:100%;padding:10px;margin-top:20px;border:none;border-radius:6px;background:#1e3a5f;color:#fff;font-size:14px;font-weight:600;cursor:pointer;">Close</button>
     </div>
 </div>
+
+<!-- ── LOGIN MODAL (copied from index.php) ── -->
+<div class="modal-overlay" id="loginModal">
+    <div class="modal">
+        <button class="modal-close" onclick="closeLoginModal()">×</button>
+        <h2>Welcome Back</h2>
+        <p>Login with your student ID or admin credentials</p>
+        
+        <form action="index.php" method="POST">
+            <div class="field">
+                <label>Username / ID Number</label>
+                <input type="text" name="username" placeholder="Enter your ID number or username" required>
+            </div>
+            <div class="field">
+                <label>Password</label>
+                <input type="password" name="password" placeholder="Enter your password" required>
+            </div>
+            <button type="submit" class="btn-submit">Sign In</button>
+        </form>
+    </div>
+</div>
+
+<style>
+/* ── LOGIN MODAL STYLES ── */
+.modal-overlay {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.5);
+    z-index: 500;
+    align-items: center;
+    justify-content: center;
+    backdrop-filter: blur(4px);
+}
+.modal-overlay.open {
+    display: flex;
+}
+.modal {
+    background: var(--card-bg);
+    border-radius: 16px;
+    padding: 32px;
+    width: 100%;
+    max-width: 400px;
+    border: 1px solid var(--border-color);
+    box-shadow: var(--shadow);
+    transition: background 0.3s, border-color 0.3s;
+}
+.modal h2 {
+    font-size: 20px;
+    font-weight: 700;
+    color: var(--text-color);
+    margin-bottom: 4px;
+}
+.modal p {
+    font-size: 13px;
+    color: #9aa5b4;
+    margin-bottom: 20px;
+}
+.modal .field {
+    margin-bottom: 14px;
+}
+.modal .field label {
+    display: block;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-color);
+    margin-bottom: 4px;
+}
+.modal .field input {
+    width: 100%;
+    padding: 10px 12px;
+    border: 1px solid var(--input-border);
+    border-radius: 8px;
+    font-size: 14px;
+    font-family: inherit;
+    background: var(--input-bg);
+    color: var(--text-color);
+    outline: none;
+    transition: all 0.3s;
+}
+.modal .field input:focus {
+    border-color: var(--nav-bg);
+    box-shadow: 0 0 0 3px rgba(30,58,95,0.1);
+}
+.modal .btn-submit {
+    width: 100%;
+    padding: 12px;
+    border: none;
+    border-radius: 8px;
+    background: var(--nav-bg);
+    color: #fff;
+    font-size: 15px;
+    font-weight: 600;
+    font-family: inherit;
+    cursor: pointer;
+    transition: background 0.2s;
+    margin-top: 4px;
+}
+.modal .btn-submit:hover {
+    background: #16304f;
+}
+.modal-close {
+    background: none;
+    border: none;
+    font-size: 24px;
+    cursor: pointer;
+    color: #9aa5b4;
+    float: right;
+    line-height: 1;
+}
+.modal-close:hover {
+    color: var(--text-color);
+}
+body.dark-mode .modal {
+    background: #242b3d;
+    border-color: #2e364a;
+}
+body.dark-mode .modal h2 {
+    color: #e8edf5;
+}
+body.dark-mode .modal .field label {
+    color: #e8edf5;
+}
+body.dark-mode .modal .field input {
+    background: #2c303a;
+    color: #e8edf5;
+    border-color: #2e364a;
+}
+body.dark-mode .modal .btn-submit {
+    background: #1a1f2e;
+}
+body.dark-mode .modal .btn-submit:hover {
+    background: #141824;
+}
+</style>
 
 <script>
-function openAboutModal() {
-    document.getElementById('aboutModal').style.display = 'flex';
+function openLoginModal() {
+    document.getElementById('loginModal').classList.add('open');
 }
-function closeAboutModal() {
-    document.getElementById('aboutModal').style.display = 'none';
+function closeLoginModal() {
+    document.getElementById('loginModal').classList.remove('open');
 }
-// Close modal when clicking outside
-document.getElementById('aboutModal').addEventListener('click', function(e) {
-    if (e.target === this) {
-        closeAboutModal();
-    }
+document.getElementById('loginModal').addEventListener('click', function(e) {
+    if (e.target === this) closeLoginModal();
 });
 </script>
+
 </body>
 </html>

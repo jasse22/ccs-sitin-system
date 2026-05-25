@@ -33,10 +33,35 @@ function val($student, $key, $session_key = null) {
 <meta charset="UTF-8"/><meta name="viewport" content="width=device-width, initial-scale=1.0"/>
 <title>CCS | Edit Profile</title>
 <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap" rel="stylesheet"/>
+<script src="darkmode.js"></script>
 <style>
+:root {
+    --bg-color: #f7f8fa;
+    --text-color: #1e2a38;
+    --card-bg: #ffffff;
+    --nav-bg: #1e3a5f;
+    --border-color: #e2e6ea;
+    --shadow: 0 4px 12px rgba(0,0,0,0.08);
+    --input-bg: #ffffff;
+    --input-border: #d0d7e2;
+    --hover-bg: #f0f4f9;
+}
+
+body.dark-mode {
+    --bg-color: #0f172a;
+    --text-color: #e2e8f0;
+    --card-bg: #1e293b;
+    --nav-bg: #0f172a;
+    --border-color: #334155;
+    --shadow: 0 4px 12px rgba(0,0,0,0.5);
+    --input-bg: #1e293b;
+    --input-border: #334155;
+    --hover-bg: #1e293b;
+}
+
 *{box-sizing:border-box;margin:0;padding:0;}
-body{font-family:'Plus Jakarta Sans',sans-serif;background:#f7f8fa;color:#1e2a38;min-height:100vh;font-size:14px;}
-nav{background:#1e3a5f;height:54px;padding:0 24px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:100;}
+body{font-family:'Plus Jakarta Sans',sans-serif;background:var(--bg-color);color:var(--text-color);min-height:100vh;font-size:14px;transition:background 0.3s, color 0.3s;}
+nav{background:var(--nav-bg);height:54px;padding:0 24px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:100;transition:background 0.3s;}
 .nav-brand{font-size:13.5px;font-weight:700;color:#fff;}
 .nav-links{display:flex;align-items:center;gap:1px;}
 .nav-links a{font-size:13px;color:rgba(255,255,255,0.7);text-decoration:none;padding:6px 10px;border-radius:5px;transition:all .15s;white-space:nowrap;}
@@ -44,9 +69,6 @@ nav{background:#1e3a5f;height:54px;padding:0 24px;display:flex;align-items:cente
 .btn-logout{background:#c53030 !important;color:#fff !important;font-weight:600 !important;border-radius:5px;padding:6px 14px !important;margin-left:6px;}
 .btn-logout:hover{background:#9b2c2c !important;}
 .page-body{max-width:900px;margin:0 auto;padding:28px 20px 60px;}
-.page-header{text-align:center;margin-bottom:22px;}
-.page-header h1{font-size:20px;font-weight:700;color:#1e3a5f;}
-.page-header p{font-size:13px;color:#9aa5b4;margin-top:3px;}
 .alert{display:flex;align-items:center;gap:9px;padding:11px 14px;border-radius:6px;font-size:13px;font-weight:500;margin-bottom:18px;}
 .alert svg{width:16px;height:16px;flex-shrink:0;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;}
 .alert-success{background:#f0fff4;border:1px solid #9ae6b4;color:#276749;}
@@ -54,8 +76,8 @@ nav{background:#1e3a5f;height:54px;padding:0 24px;display:flex;align-items:cente
 .alert-error{background:#fff5f5;border:1px solid #fed7d7;color:#c53030;}
 .alert-error svg{stroke:#c53030;}
 .profile-layout{display:grid;grid-template-columns:250px 1fr;gap:18px;align-items:start;}
-.card{background:#fff;border-radius:8px;border:1px solid #e2e6ea;overflow:hidden;}
-.card-head{background:#1e3a5f;padding:11px 16px;}
+.card{background:var(--card-bg);border-radius:12px;border:1px solid var(--border-color);overflow:hidden;box-shadow:var(--shadow);transition:background 0.3s, border-color 0.3s;}
+.card-head{background:var(--nav-bg);padding:11px 16px;}
 .card-head h3{color:#fff;font-size:13px;font-weight:600;}
 .card-head p{color:rgba(255,255,255,0.45);font-size:11.5px;margin-top:2px;}
 .photo-body{padding:20px 16px 22px;display:flex;flex-direction:column;align-items:center;gap:12px;}
@@ -69,7 +91,7 @@ nav{background:#1e3a5f;height:54px;padding:0 24px;display:flex;align-items:cente
 .stu-name{font-size:14px;font-weight:700;color:#1e3a5f;text-align:center;line-height:1.35;}
 .stu-course{font-size:12px;color:#9aa5b4;text-align:center;margin-top:1px;}
 .id-pill{background:#eef3f9;border:1px solid #c5d5e8;border-radius:20px;padding:4px 12px;font-size:12px;font-weight:600;color:#1e3a5f;}
-.upload-zone{width:100%;border:1.5px dashed #d0d7e2;border-radius:6px;padding:12px 8px;text-align:center;cursor:pointer;transition:border-color .15s,background .15s;position:relative;}
+.upload-zone{width:100%;border:1.5px dashed var(--border-color);border-radius:6px;padding:12px 8px;text-align:center;cursor:pointer;transition:border-color .15s,background .15s;position:relative;}
 .upload-zone:hover{border-color:#1e3a5f;background:#eef3f9;}
 .upload-zone input[type="file"]{position:absolute;inset:0;opacity:0;cursor:pointer;width:100%;height:100%;}
 .uz-icon svg{width:22px;height:22px;stroke:#9aa5b4;fill:none;stroke-width:1.5;stroke-linecap:round;stroke-linejoin:round;}
@@ -84,7 +106,7 @@ nav{background:#1e3a5f;height:54px;padding:0 24px;display:flex;align-items:cente
 .section-label:first-of-type{margin-top:0;}
 .field{margin-bottom:12px;}
 .field label{display:flex;align-items:center;gap:4px;font-size:11px;font-weight:600;color:#4a5568;margin-bottom:4px;text-transform:uppercase;letter-spacing:0.04em;}
-.field input,.field select{width:100%;padding:9px 11px;border:1px solid #d0d7e2;border-radius:6px;font-size:13px;font-family:'Plus Jakarta Sans',sans-serif;color:#1e2a38;background:#fff;outline:none;transition:border-color .15s;}
+.field input,.field select{width:100%;padding:9px 11px;border:1px solid var(--border-color);border-radius:6px;font-size:13px;font-family:'Plus Jakarta Sans',sans-serif;color:var(--text-color);background:var(--input-bg);outline:none;transition:border-color .15s;}
 .field input:focus,.field select:focus{border-color:#1e3a5f;box-shadow:0 0 0 3px rgba(30,58,95,0.07);}
 .field input[readonly]{background:#f7f8fa;color:#9aa5b4;cursor:not-allowed;}
 .field input::placeholder{color:#b0bac8;}
@@ -106,22 +128,8 @@ hr.divider{border:none;border-top:1px solid #eef0f3;margin:6px 0 16px;}
 </style>
 </head>
 <body>
-  <nav>
-  <div class="nav-brand">CCS Sit-in Monitoring System</div>
-  <div class="nav-links">
-    <?php include 'notif_dropdown.php'; ?>
-    <a href="homepage.php">Home</a>
-    <a href="profile.php" class="active">Edit Profile</a>
-    <a href="history.php">History</a>
-    <a href="reservation.php">Reservation</a>
-    <a href="logout.php" class="btn-logout">Log out</a>
-  </div>
-</nav>
+<?php include 'header.php'; ?>
 <div class="page-body">
-  <div class="page-header">
-    <h1>Edit Profile</h1>
-    <p>Manage your personal information and account settings</p>
-  </div>
 
   <?php if ($success): ?>
   <div class="alert alert-success">
@@ -176,9 +184,9 @@ hr.divider{border:none;border-top:1px solid #eef0f3;margin:6px 0 16px;}
 
     <!-- FORM CARD -->
     <div class="card">
-      <div class="card-head">
-        <h3>Personal Information</h3>
-        <p>Fill in your details then click Save Changes</p>
+      <div class="card-head" style="text-align:center;">
+        <h3 style="font-size:18px; font-weight:700;">Edit Profile</h3>
+        <p style="font-size:13px; color:rgba(255,255,255,0.6); margin-top:2px;">Manage your personal information and account settings</p>
       </div>
       <div class="form-body">
         <form method="POST" action="update_profile.php">

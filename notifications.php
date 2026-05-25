@@ -22,16 +22,38 @@ $pdo->prepare("UPDATE notifications SET is_read = 1 WHERE student_id = ?")->exec
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>CCS | Notifications</title>
     <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <script src="darkmode.js"></script>
     <style>
+        :root {
+            --bg-color: #f7f8fa;
+            --text-color: #1e2a38;
+            --card-bg: #ffffff;
+            --nav-bg: #1e3a5f;
+            --border-color: #e2e6ea;
+            --shadow: 0 4px 12px rgba(0,0,0,0.08);
+            --hover-bg: #f0f2f5;
+        }
+
+        body.dark-mode {
+            --bg-color: #1a1f2e;
+            --text-color: #e8edf5;
+            --card-bg: #2c303a;
+            --nav-bg: #141824;
+            --border-color: #3a4050;
+            --shadow: 0 4px 12px rgba(0,0,0,0.6);
+            --hover-bg: #333742;
+        }
+
         * { box-sizing: border-box; margin: 0; padding: 0; }
         body {
             font-family: 'Plus Jakarta Sans', sans-serif;
-            background: #f7f8fa;
-            color: #1e2a38;
+            background: var(--bg-color);
+            color: var(--text-color);
             min-height: 100vh;
+            transition: background 0.3s, color 0.3s;
         }
         nav {
-            background: #1e3a5f;
+            background: var(--nav-bg);
             height: 54px;
             padding: 0 24px;
             display: flex;
@@ -40,6 +62,7 @@ $pdo->prepare("UPDATE notifications SET is_read = 1 WHERE student_id = ?")->exec
             position: sticky;
             top: 0;
             z-index: 100;
+            transition: background 0.3s;
         }
         .nav-brand {
             font-size: 13.5px;
@@ -84,64 +107,59 @@ $pdo->prepare("UPDATE notifications SET is_read = 1 WHERE student_id = ?")->exec
         .page-title {
             font-size: 22px;
             font-weight: 800;
-            color: #1e3a5f;
+            color: var(--text-color);
             margin-bottom: 24px;
             text-align: center;
+            transition: color 0.3s;
         }
         .page-title span {
             display: block;
             font-size: 13px;
             font-weight: 400;
-            color: #9aa5b4;
+            color: #8e9bb3;
             margin-top: 4px;
         }
         .card {
-            background: #fff;
+            background: var(--card-bg);
             border-radius: 12px;
-            box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+            box-shadow: var(--shadow);
             overflow: hidden;
             border: none;
+            transition: background 0.3s, box-shadow 0.3s;
         }
         .notif-item {
             padding: 16px 20px;
-            border-bottom: 1px solid #eef0f3;
+            border-bottom: 1px solid var(--border-color);
             transition: background 0.2s;
         }
         .notif-item:hover {
-            background: #f8f9fa;
+            background: var(--hover-bg);
         }
         .notif-item:last-child {
             border-bottom: none;
         }
         .notif-message {
             font-size: 14px;
-            color: #1e2a38;
+            color: var(--text-color);
             font-weight: 500;
             line-height: 1.5;
+            transition: color 0.3s;
         }
         .notif-time {
             font-size: 12px;
-            color: #9aa5b4;
+            color: #8e9bb3;
             margin-top: 4px;
-        }
-        .notif-badge {
-            display: inline-block;
-            padding: 2px 8px;
-            border-radius: 10px;
-            font-size: 10px;
-            font-weight: 700;
-            background: #e63946;
-            color: #fff;
+            transition: color 0.3s;
         }
         .empty-state {
             text-align: center;
             padding: 40px 20px;
-            color: #9aa5b4;
+            color: #8e9bb3;
         }
         .empty-state svg {
             width: 48px;
             height: 48px;
-            stroke: #9aa5b4;
+            stroke: #8e9bb3;
             fill: none;
             stroke-width: 1.5;
             margin-bottom: 12px;
@@ -150,9 +168,10 @@ $pdo->prepare("UPDATE notifications SET is_read = 1 WHERE student_id = ?")->exec
             display: block;
             text-align: center;
             margin-top: 20px;
-            color: #1e3a5f;
+            color: var(--text-color);
             text-decoration: none;
             font-weight: 600;
+            transition: color 0.3s;
         }
         .back-link:hover {
             text-decoration: underline;
@@ -172,6 +191,9 @@ $pdo->prepare("UPDATE notifications SET is_read = 1 WHERE student_id = ?")->exec
         <a href="history.php">History</a>
         <a href="reservation.php">Reservation</a>
         <a href="notifications.php" class="active">Notifications</a>
+        <button onclick="toggleDarkMode()" style="background:none;border:none;color:rgba(255,255,255,0.7);cursor:pointer;font-size:16px;padding:6px 10px;border-radius:5px;transition:all .15s;" onmouseover="this.style.background='rgba(255,255,255,0.1)'" onmouseout="this.style.background='none'">
+            🌙
+        </button>
         <a href="logout.php" class="btn-logout">Log out</a>
     </div>
 </nav>

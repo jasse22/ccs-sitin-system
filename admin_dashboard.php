@@ -86,75 +86,80 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $pdo->exec("UPDATE students SET session = 30");
         header('Location: admin_dashboard.php?page=students&msg=all_reset'); exit;
     }
-
     // Sit-in (registered student OR walk-in)
-    if (isset($_POST['do_sitin'])) {
-        $id_num  = trim($_POST['id_number']    ?? '');
-        $name    = trim($_POST['student_name'] ?? '');
-        $purpose = trim($_POST['purpose']      ?? '');
-        $lab     = trim($_POST['lab']          ?? '');
-        $pc_num  = (int)($_POST['pc_number']   ?? 0);
+if (isset($_POST['do_sitin'])) {
+    $id_num  = trim($_POST['id_number']    ?? '');
+    $name    = trim($_POST['student_name'] ?? '');
+    $purpose = trim($_POST['purpose']      ?? '');
+    $lab     = trim($_POST['lab']          ?? '');
+    $pc_num  = (int)($_POST['pc_number']   ?? 0);
 
-        if (!$id_num || !$name || !$purpose || !$lab || !$pc_num) {
-            header('Location: admin_dashboard.php?page=sitin&msg=sitin_err'); exit;
-        }
-
-        try {
-            // Check if PC is available
-            $pcCheck = $pdo->prepare("SELECT status FROM computers WHERE lab_room = ? AND pc_number = ?");
-            $pcCheck->execute([$lab, $pc_num]);
-            $pcStatus = $pcCheck->fetchColumn();
-            
-            if ($pcStatus !== 'available') {
-                header('Location: admin_dashboard.php?page=sitin&msg=pc_occupied'); exit;
-            }
-
-            $stu = $pdo->prepare("SELECT * FROM students WHERE id_number = ? LIMIT 1");
-            $stu->execute([$id_num]);
-            $found = $stu->fetch();
-
-            if ($found) {
-                if ($found['session'] <= 0) {
-                    header('Location: admin_dashboard.php?page=sitin&msg=no_session'); exit;
-                }
-                $pdo->prepare("UPDATE students SET session = session - 1 WHERE id = ? AND session > 0")
-                    ->execute([$found['id']]);
-                
-                $pdo->prepare("UPDATE computers SET status = 'occupied', current_student_id = ? WHERE lab_room = ? AND pc_number = ?")
-                    ->execute([$found['id'], $lab, $pc_num]);
-                
-                $pdo->prepare("INSERT INTO sit_in_history (student_id, id_number, fullname, sit_purpose, laboratory, pc_number, login_time, date) VALUES (?,?,?,?,?,?,NOW(),CURDATE())")
-                    ->execute([$found['id'], $id_num, $name, $purpose, $lab, $pc_num]);
-            } else {
-                $pdo->prepare("UPDATE computers SET status = 'occupied' WHERE lab_room = ? AND pc_number = ?")
-                    ->execute([$lab, $pc_num]);
-                $pdo->prepare("INSERT INTO sit_in_history (student_id, id_number, fullname, sit_purpose, laboratory, pc_number, login_time, date) VALUES (NULL,?,?,?,?,?,NOW(),CURDATE())")
-                    ->execute([$id_num, $name, $purpose, $lab, $pc_num]);
-            }
-        } catch (PDOException $e) {
-            error_log('Sit-in error: ' . $e->getMessage());
-            header('Location: admin_dashboard.php?page=sitin&msg=db_error'); exit;
-        }
-
-        header('Location: admin_dashboard.php?page=sitin&msg=sittin'); exit;
+    if (!$id_num || !$name || !$purpose || !$lab || !$pc_num) {
+        header('Location: admin_dashboard.php?page=sitin&msg=sitin_err'); exit;
     }
-
+    try {
+    echo "<h3>Debug Mode - Sit-in Process</h3>";
+    echo "ID Number: " . $id_num . "<br>";
+    echo "Name: " . $name . "<br>";
+    echo "Purpose: " . $purpose . "<br>";
+    echo "Lab: " . $lab . "<br>";
+    echo "PC Number: " . $pc_num . "<br>";
+    
+    // Check if student exists
+    $stu = $pdo->prepare("SELECT * FROM students WHERE id_number = ? LIMIT 1");
+    $stu->execute([$id_num]);
+    $found = $stu->fetch();
+    
+    if ($found) {
+        echo "Student found: " . $found['firstname'] . " " . $found['lastname'] . "<br>";
+        echo "Current sessions: " . $found['session'] . "<br>";
+        
+        if ($found['session'] <= 0) {
+            die("Student has no remaining sessions.");
+        }
+        
+        // Deduct session
+        $update = $pdo->prepare("UPDATE students SET session = session - 1 WHERE id = ? AND session > 0");
+        $update->execute([$found['id']]);
+        echo "Session deducted!<br>";
+        
+        // Insert sit-in record
+        $insert = $pdo->prepare("INSERT INTO sit_in_history (student_id, id_number, fullname, sit_purpose, laboratory, pc_number, login_time, date) VALUES (?,?,?,?,?,?,NOW(),CURDATE())");
+        $result = $insert->execute([$found['id'], $id_num, $name, $purpose, $lab, $pc_num]);
+        echo "Sit-in record inserted: " . ($result ? "YES" : "NO") . "<br>";
+    } else {
+        echo "Student NOT found in database - treating as walk-in.<br>";
+        
+        // Insert walk-in record
+        $insert = $pdo->prepare("INSERT INTO sit_in_history (student_id, id_number, fullname, sit_purpose, laboratory, pc_number, login_time, date) VALUES (NULL,?,?,?,?,?,NOW(),CURDATE())");
+        $result = $insert->execute([$id_num, $name, $purpose, $lab, $pc_num]);
+        echo "Walk-in record inserted: " . ($result ? "YES" : "NO") . "<br>";
+    }
+    
+    echo "<h3>✅ Success! All operations completed.</h3>";
+    echo "<a href='admin_dashboard.php?page=sitin'>Go back to Sit-in page</a>";
+    exit;
+    
+} catch (PDOException $e) {
+    echo "<h3>❌ Database Error</h3>";
+    echo "<strong>Error Message:</strong> " . $e->getMessage() . "<br>";
+    echo "<strong>Error Code:</strong> " . $e->getCode() . "<br>";
+    echo "<strong>File:</strong> " . $e->getFile() . "<br>";
+    echo "<strong>Line:</strong> " . $e->getLine() . "<br>";
+    echo "<br><a href='admin_dashboard.php?page=sitin'>Go back to Sit-in page</a>";
+    exit;
+}
+    header('Location: admin_dashboard.php?page=sitin&msg=sittin'); exit;
+}
     // Logout a sit-in record
     if (isset($_POST['logout_sitin'])) {
-        $sitin = $pdo->prepare("SELECT laboratory, pc_number FROM sit_in_history WHERE id = ?");
-        $sitin->execute([(int)$_POST['sitin_id']]);
-        $sitinData = $sitin->fetch();
-        
-        if ($sitinData && $sitinData['pc_number']) {
-            $pdo->prepare("UPDATE computers SET status = 'available', current_student_id = NULL WHERE lab_room = ? AND pc_number = ?")
-                ->execute([$sitinData['laboratory'], $sitinData['pc_number']]);
-        }
-        
+        // Update logout time - no PC table needed
         $pdo->prepare("UPDATE sit_in_history SET logout_time = NOW() WHERE id = ? AND logout_time IS NULL")
             ->execute([(int)$_POST['sitin_id']]);
+        
         header('Location: admin_dashboard.php?page=sitin&msg=logout'); exit;
     }
-
+}
     // Approve reservation
     if (isset($_POST['approve_reservation'])) {
         $rid = (int)$_POST['reservation_id'];
@@ -191,10 +196,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $new_value = $current === '1' ? '0' : '1';
         $pdo->prepare("UPDATE settings SET setting_value = ? WHERE setting_key = 'reservations_enabled'")
             ->execute([$new_value]);
-        header('Location: admin_dashboard.php?page=reservation&msg=toggled');
-        exit;
+        header('Location: admin_dashboard.php?page=reservation&msg=toggled'); exit;
     }
-}
 
 // ── Fetch data ───────────────────────────────────────────────
 $total_students  = (int)$pdo->query("SELECT COUNT(*) FROM students")->fetchColumn();
@@ -254,6 +257,7 @@ $flash_type = str_starts_with($flash_msg, '❌') ? 'error' : 'success';
 <title>CCS | Admin Dashboard</title>
 <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap" rel="stylesheet"/>
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script src="darkmode.js"></script>
 <style>
 /* ── CSS Variables ── */
 :root {
@@ -265,14 +269,51 @@ $flash_type = str_starts_with($flash_msg, '❌') ? 'error' : 'success';
     --shadow: 0 4px 12px rgba(0,0,0,0.08);
 }
 
-[data-theme="dark"] {
-    --bg-color: #1a1a2e;
-    --text-color: #e0e0e0;
-    --card-bg: #16213e;
-    --nav-bg: #0f0f1a;
-    --border-color: #2a2a4a;
-    --shadow: 0 4px 12px rgba(0,0,0,0.5);
+body.dark-mode {
+    --bg-color: #1a1f2e;
+    --text-color: #e8edf5;
+    --card-bg: #242b3d;
+    --nav-bg: #141824;
+    --border-color: #2e364a;
+    --shadow: 0 4px 12px rgba(0,0,0,0.3);
 }
+
+/* ── FIX FOR MODAL INPUTS IN DARK MODE ── */
+body.dark-mode .modal input,
+body.dark-mode .modal select,
+body.dark-mode .modal textarea {
+    color: #000000 !important;
+    background-color: #ffffff !important;
+    border: 1px solid #4a4d57 !important;
+}
+
+body.dark-mode .modal input:focus,
+body.dark-mode .modal select:focus {
+    border-color: #1e3a5f !important;
+    box-shadow: 0 0 0 3px rgba(30,58,95,0.2) !important;
+}
+
+body.dark-mode .modal input[readonly] {
+    background-color: #f0f0f0 !important;
+    color: #555 !important;
+}
+
+body.dark-mode .modal label {
+    color: #e8edf5 !important;
+}
+
+body.dark-mode .modal .modal-head h3 {
+    color: #e8edf5 !important;
+}
+
+body.dark-mode .modal .modal-close {
+    color: #e8edf5 !important;
+}
+
+body.dark-mode .modal .btn-cancel {
+    color: #e8edf5 !important;
+}
+
 :root {
   --blue:#1e3a5f;--blue-lt:#eef3f9;--blue-bd:#c5d5e8;--blue-dk:#1e2a38;
   --green:#276749;--green-lt:#f0fff4;--green-bd:#9ae6b4;
@@ -282,8 +323,8 @@ $flash_type = str_starts_with($flash_msg, '❌') ? 'error' : 'success';
   --radius:6px;
 }
 *{box-sizing:border-box;margin:0;padding:0;}
-body{font-family:'Plus Jakarta Sans',sans-serif;background:var(--gray-100);color:var(--gray-800);font-size:14px;}
-nav{background:var(--blue);height:52px;padding:0 20px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:200;}
+body{font-family:'Plus Jakarta Sans',sans-serif;background:var(--bg-color);color:var(--text-color);font-size:14px;transition:background 0.3s, color 0.3s;}
+nav{background:var(--nav-bg);height:52px;padding:0 20px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:200;transition:background 0.3s;}
 .nav-brand{font-size:13.5px;font-weight:700;color:#fff;white-space:nowrap;}
 .nav-links{display:flex;align-items:center;gap:1px;flex-wrap:wrap;}
 .nav-links a{font-size:12.5px;color:rgba(255,255,255,0.7);text-decoration:none;padding:5px 9px;border-radius:4px;white-space:nowrap;transition:all .15s;}
@@ -296,13 +337,13 @@ nav{background:var(--blue);height:52px;padding:0 20px;display:flex;align-items:c
 .page-body{max-width:1280px;margin:0 auto;padding:20px 18px 52px;}
 .page-section{display:none;}
 .page-section.active{display:block;}
-.page-title{font-size:18px;font-weight:700;color:var(--blue);margin-bottom:18px;text-align:center;}
+.page-title{font-size:18px;font-weight:700;color:var(--text-color);margin-bottom:18px;text-align:center;}
 .home-grid{display:grid;grid-template-columns:1fr 1fr;gap:18px;}
-.card{background:#fff;border:1px solid var(--gray-200);border-radius:7px;overflow:hidden;margin-bottom:18px;}
-.card-head{background:var(--blue);padding:10px 15px;display:flex;align-items:center;justify-content:space-between;}
+.card{background:var(--card-bg);border:1px solid var(--border-color);border-radius:12px;overflow:hidden;box-shadow:var(--shadow);transition:background 0.3s, border-color 0.3s;}
+.card-head{background:var(--nav-bg);padding:10px 15px;display:flex;align-items:center;justify-content:space-between;}
 .card-head h2{color:#fff;font-size:12.5px;font-weight:600;}
-.stat-row{padding:16px 18px;display:flex;flex-direction:column;gap:10px;border-bottom:1px solid var(--gray-100);}
-.stat-item{display:flex;align-items:center;gap:10px;font-size:13.5px;color:var(--gray-800);}
+.stat-row{padding:16px 18px;display:flex;flex-direction:column;gap:10px;border-bottom:1px solid var(--border-color);}
+.stat-item{display:flex;align-items:center;gap:10px;font-size:13.5px;color:var(--text-color);}
 .stat-icon-box{width:32px;height:32px;border-radius:7px;display:flex;align-items:center;justify-content:center;flex-shrink:0;}
 .stat-icon-box svg{width:16px;height:16px;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;}
 .stat-icon-blue{background:var(--blue-lt);border:1px solid var(--blue-bd);}.stat-icon-blue svg{stroke:var(--blue);}
@@ -311,26 +352,26 @@ nav{background:var(--blue);height:52px;padding:0 20px;display:flex;align-items:c
 .chart-wrap{padding:10px 14px 14px;display:flex;justify-content:center;}
 .chart-wrap canvas{max-width:270px;}
 .ann-form{padding:12px 14px;}
-.ann-form textarea{width:100%;padding:8px 10px;border:1px solid var(--gray-200);border-radius:6px;font-family:'Plus Jakarta Sans',sans-serif;font-size:13px;resize:vertical;min-height:76px;outline:none;}
-.ann-form textarea:focus{border-color:var(--blue);box-shadow:0 0 0 3px rgba(30,58,95,0.07);}
+.ann-form textarea{width:100%;padding:8px 10px;border:1px solid var(--border-color);border-radius:6px;font-family:'Plus Jakarta Sans',sans-serif;font-size:13px;resize:vertical;min-height:76px;outline:none;}
+.ann-form textarea:focus{border-color:var(--nav-bg);box-shadow:0 0 0 3px rgba(30,58,95,0.07);}
 .btn-submit{padding:7px 18px;border:none;border-radius:6px;background:var(--green);color:#fff;font-size:13px;font-weight:600;font-family:'Plus Jakarta Sans',sans-serif;cursor:pointer;margin-top:7px;}
 .btn-submit:hover{background:#1e4d38;}
-.ann-posted-title{font-size:14px;font-weight:600;padding:11px 14px 4px;}
-.ann-item{padding:9px 14px;border-top:1px solid var(--gray-100);}
-.ann-meta{font-size:12px;font-weight:600;color:var(--blue);margin-bottom:4px;}
-.ann-content{font-size:13px;color:var(--gray-600);}
+.ann-posted-title{font-size:14px;font-weight:600;padding:11px 14px 4px;color:var(--text-color);}
+.ann-item{padding:9px 14px;border-top:1px solid var(--border-color);}
+.ann-meta{font-size:12px;font-weight:600;color:var(--nav-bg);margin-bottom:4px;}
+.ann-content{font-size:13px;color:var(--text-color);}
 .table-wrap{overflow-x:auto;}
 table{width:100%;border-collapse:collapse;}
-thead th{background:var(--gray-100);color:var(--gray-600);font-size:11px;font-weight:700;padding:9px 11px;text-align:left;border-bottom:1px solid var(--gray-200);white-space:nowrap;text-transform:uppercase;letter-spacing:0.03em;}
-tbody tr{border-bottom:1px solid var(--gray-100);transition:background .1s;}
-tbody tr:hover{background:#fafbfc;}
-tbody td{padding:8px 11px;font-size:13px;color:var(--gray-600);}
+thead th{background:var(--nav-bg);color:#fff;font-size:11px;font-weight:700;padding:9px 11px;text-align:left;border-bottom:1px solid var(--border-color);white-space:nowrap;text-transform:uppercase;letter-spacing:0.03em;}
+tbody tr{border-bottom:1px solid var(--border-color);transition:background .1s;}
+tbody tr:hover{background:var(--hover-bg);}
+tbody td{padding:8px 11px;font-size:13px;color:var(--text-color);}
 .no-data{text-align:center;padding:26px;color:var(--gray-400);font-size:13px;font-style:italic;}
 .toolbar{display:flex;align-items:center;gap:9px;margin-bottom:12px;flex-wrap:wrap;}
 .toolbar-right{margin-left:auto;display:flex;align-items:center;gap:7px;}
-.entries-select{padding:5px 7px;border:1px solid var(--gray-200);border-radius:5px;font-size:13px;font-family:'Plus Jakarta Sans',sans-serif;outline:none;}
-.search-input{padding:6px 10px;border:1px solid var(--gray-200);border-radius:5px;font-size:13px;font-family:'Plus Jakarta Sans',sans-serif;width:175px;outline:none;}
-.search-input:focus{border-color:var(--blue);}
+.entries-select{padding:5px 7px;border:1px solid var(--border-color);border-radius:5px;font-size:13px;font-family:'Plus Jakarta Sans',sans-serif;outline:none;}
+.search-input{padding:6px 10px;border:1px solid var(--border-color);border-radius:5px;font-size:13px;font-family:'Plus Jakarta Sans',sans-serif;width:175px;outline:none;}
+.search-input:focus{border-color:var(--nav-bg);}
 .btn{padding:6px 14px;border:none;border-radius:5px;font-size:13px;font-weight:600;font-family:'Plus Jakarta Sans',sans-serif;cursor:pointer;transition:all .15s;text-decoration:none;display:inline-flex;align-items:center;gap:4px;}
 .btn-blue{background:#2563a8;color:#fff;}.btn-blue:hover{background:#1d4f8a;}
 .btn-red{background:var(--red);color:#fff;}.btn-red:hover{background:#9b2c2c;}
@@ -338,57 +379,38 @@ tbody td{padding:8px 11px;font-size:13px;color:var(--gray-600);}
 .btn-sm{padding:3px 10px;font-size:12px;}
 .modal-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,0.35);z-index:500;align-items:center;justify-content:center;}
 .modal-overlay.open{display:flex;}
-.modal{background:#fff;border-radius:7px;border:1px solid var(--gray-200);width:100%;max-width:460px;overflow:hidden;}
-.modal-head{display:flex;align-items:center;justify-content:space-between;padding:13px 18px;border-bottom:1px solid var(--gray-200);}
-.modal-head h3{font-size:14px;font-weight:700;color:var(--gray-800);}
+.modal{background:var(--card-bg);border-radius:12px;border:1px solid var(--border-color);width:100%;max-width:460px;overflow:hidden;box-shadow:var(--shadow);}
+.modal-head{display:flex;align-items:center;justify-content:space-between;padding:13px 18px;border-bottom:1px solid var(--border-color);}
+.modal-head h3{font-size:14px;font-weight:700;color:var(--text-color);}
 .modal-close{background:none;border:none;font-size:19px;cursor:pointer;color:var(--gray-400);line-height:1;padding:0 3px;}
-.modal-close:hover{color:var(--gray-800);}
+.modal-close:hover{color:var(--text-color);}
 .modal-body{padding:18px;}
-.modal-footer{padding:11px 18px;border-top:1px solid var(--gray-100);display:flex;justify-content:flex-end;gap:7px;}
+.modal-footer{padding:11px 18px;border-top:1px solid var(--border-color);display:flex;justify-content:flex-end;gap:7px;}
 .field{margin-bottom:12px;}
-.field label{display:block;font-size:11.5px;font-weight:600;color:var(--gray-600);margin-bottom:4px;}
-.field input,.field select{width:100%;padding:8px 10px;border:1px solid var(--gray-200);border-radius:5px;font-size:13px;font-family:'Plus Jakarta Sans',sans-serif;color:var(--gray-800);outline:none;transition:border-color .15s;}
-.field input:focus,.field select:focus{border-color:var(--blue);box-shadow:0 0 0 3px rgba(30,58,95,0.07);}
+.field label{display:block;font-size:11.5px;font-weight:600;color:var(--text-color);margin-bottom:4px;}
+.field input,.field select{width:100%;padding:8px 10px;border:1px solid var(--border-color);border-radius:5px;font-size:13px;font-family:'Plus Jakarta Sans',sans-serif;color:var(--text-color);outline:none;transition:border-color .15s;}
+.field input:focus,.field select:focus{border-color:var(--nav-bg);box-shadow:0 0 0 3px rgba(30,58,95,0.07);}
 .field input[readonly]{background:var(--gray-100);color:var(--gray-400);}
 .field-row{display:grid;grid-template-columns:1fr 1fr;gap:11px;}
 .badge{display:inline-block;padding:2px 9px;border-radius:20px;font-size:11.5px;font-weight:600;}
 .badge-pending{background:#fefce8;color:#854d0e;}
 .badge-approved{background:var(--green-lt);color:var(--green);}
 .badge-rejected{background:var(--red-lt);color:var(--red);}
-.page-btn{width:28px;height:28px;border-radius:5px;border:1px solid var(--gray-200);background:#fff;font-size:12.5px;font-family:'Plus Jakarta Sans',sans-serif;color:var(--gray-600);cursor:pointer;display:inline-flex;align-items:center;justify-content:center;transition:all .15s;}
-.page-btn:hover{border-color:var(--blue);color:var(--blue);}
-.page-btn.active{background:var(--blue);border-color:var(--blue);color:#fff;font-weight:600;}
+.page-btn{width:28px;height:28px;border-radius:5px;border:1px solid var(--border-color);background:var(--card-bg);font-size:12.5px;font-family:'Plus Jakarta Sans',sans-serif;color:var(--text-color);cursor:pointer;display:inline-flex;align-items:center;justify-content:center;transition:all .15s;}
+.page-btn:hover{border-color:var(--nav-bg);color:var(--nav-bg);}
+.page-btn.active{background:var(--nav-bg);border-color:var(--nav-bg);color:#fff;font-weight:600;}
 @media(max-width:900px){.home-grid{grid-template-columns:1fr;}}
 @media(max-width:640px){nav{padding:0 12px;}.nav-brand{font-size:12px;}.nav-links a{padding:4px 6px;font-size:11px;}}
 </style>
 </head>
 <body>
-
-<nav>
-  <div class="nav-brand">CCS Admin Dashboard</div>
-  <div class="nav-links">
-    <a href="?page=home"        class="<?= $page==='home'        ?'active':'' ?>">Home</a>
-    <a href="#" onclick="openModal('searchModal');return false;">Search</a>
-    <a href="?page=students"    class="<?= $page==='students'    ?'active':'' ?>">Students</a>
-    <a href="?page=sitin"       class="<?= $page==='sitin'       ?'active':'' ?>" onclick="this.href='?page=sitin'">Sit-in</a>
-    <a href="?page=records"     class="<?= $page==='records'     ?'active':'' ?>">Sit-in Records</a>
-    <a href="?page=sessions"    class="<?= $page==='sessions'    ?'active':'' ?>">Sessions</a>
-    <a href="?page=reports"     class="<?= $page==='reports'     ?'active':'' ?>">Reports</a>
-    <a href="?page=reservation" class="<?= $page==='reservation' ?'active':'' ?>">Reservations</a>
-    <a href="admin_feedback.php">View Student Feedback</a>
-    <button onclick="toggleDarkMode()" style="background:none;border:none;color:rgba(255,255,255,0.7);cursor:pointer;font-size:16px;padding:6px 10px;border-radius:5px;transition:all .15s;" onmouseover="this.style.background='rgba(255,255,255,0.1)'" onmouseout="this.style.background='none'">
-    🌙
-</button>
-    <a href="admin_logout.php" style="background:#dc3545;color:#fff;padding:5px 13px;border-radius:4px;font-size:12.5px;font-weight:600;text-decoration:none;margin-left:4px;">Log out</a>
-  </div>
-</nav>
+<?php include 'admin_header.php'; ?>
 
 <div class="page-body">
 
 <?php if ($flash_msg): ?>
   <div class="flash <?= $flash_type ?>"><?= $flash_msg ?></div>
 <?php endif; ?>
-
 <!-- ════════════ HOME ════════════ -->
 <div id="page-home" class="page-section <?= $page==='home'?'active':'' ?>">
     <div class="page-title" style="margin-bottom:28px;">
@@ -401,94 +423,109 @@ tbody td{padding:8px 11px;font-size:13px;color:var(--gray-600);}
     
     <div class="home-grid" style="display:grid;grid-template-columns:1fr 1fr;gap:20px;max-width:1200px;margin:0 auto;">
         
-        <!-- STATISTICS CARD -->
-        <div class="card" style="border-radius:12px;box-shadow:0 4px 12px rgba(0,0,0,0.08);overflow:hidden;border:none;">
-            <div class="card-head" style="background:linear-gradient(135deg, #1e3a5f, #2a5a8a);padding:14px 18px;">
-                <div style="display:flex;align-items:center;gap:8px;">
-                    <span style="font-size:18px;">📊</span>
-                    <h2 style="color:#fff;font-size:14px;font-weight:700;text-transform:uppercase;letter-spacing:0.05em;">Statistics</h2>
-                </div>
-            </div>
-            
-            <div class="stat-row" style="padding:18px 20px;display:flex;flex-direction:column;gap:12px;">
-                <div class="stat-item" style="display:flex;align-items:center;gap:14px;padding:10px 14px;background:#f8f9fa;border-radius:8px;border-left:4px solid #1e3a5f;">
-                    <div class="stat-icon-box stat-icon-blue" style="width:40px;height:40px;border-radius:8px;display:flex;align-items:center;justify-content:center;background:#eef3f9;">
-                        <svg viewBox="0 0 24 24" width="20" height="20" stroke="#1e3a5f" fill="none" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
-                    </div>
-                    <div>
-                        <div style="font-size:12px;color:#4a5568;font-weight:500;">Registered Students</div>
-                        <div style="font-size:22px;font-weight:700;color:#1e3a5f;"><?= $total_students ?></div>
+        <!-- LEFT COLUMN: Statistics + Graph -->
+        <div style="display:flex;flex-direction:column;gap:20px;">
+            <!-- STATISTICS CARD -->
+            <div class="card" style="border-radius:12px;box-shadow:0 4px 12px rgba(0,0,0,0.08);overflow:hidden;border:none;">
+                <div class="card-head" style="background:linear-gradient(135deg, #1e3a5f, #2a5a8a);padding:14px 18px;">
+                    <div style="display:flex;align-items:center;gap:8px;">
+                        <span style="font-size:18px;">📊</span>
+                        <h2 style="color:#fff;font-size:14px;font-weight:700;text-transform:uppercase;letter-spacing:0.05em;">Statistics</h2>
                     </div>
                 </div>
                 
-                <div class="stat-item" style="display:flex;align-items:center;gap:14px;padding:10px 14px;background:#f8f9fa;border-radius:8px;border-left:4px solid #28a745;">
-                    <div class="stat-icon-box stat-icon-green" style="width:40px;height:40px;border-radius:8px;display:flex;align-items:center;justify-content:center;background:#f0fff4;">
-                        <svg viewBox="0 0 24 24" width="20" height="20" stroke="#28a745" fill="none" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+                <div class="stat-row" style="padding:18px 20px;display:flex;flex-direction:column;gap:12px;">
+                    <div class="stat-item" style="display:flex;align-items:center;gap:14px;padding:10px 14px;background:#f8f9fa;border-radius:8px;border-left:4px solid #1e3a5f;">
+                        <div class="stat-icon-box stat-icon-blue" style="width:40px;height:40px;border-radius:8px;display:flex;align-items:center;justify-content:center;background:#eef3f9;">
+                            <svg viewBox="0 0 24 24" width="20" height="20" stroke="#1e3a5f" fill="none" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+                        </div>
+                        <div>
+                            <div style="font-size:12px;color:#4a5568;font-weight:500;">Registered Students</div>
+                            <div style="font-size:22px;font-weight:700;color:#1e3a5f;"><?= $total_students ?></div>
+                        </div>
                     </div>
-                    <div>
-                        <div style="font-size:12px;color:#4a5568;font-weight:500;">Currently Sitting In</div>
-                        <div style="font-size:22px;font-weight:700;color:#28a745;"><?= $currently_sitin ?></div>
+                    
+                    <div class="stat-item" style="display:flex;align-items:center;gap:14px;padding:10px 14px;background:#f8f9fa;border-radius:8px;border-left:4px solid #28a745;">
+                        <div class="stat-icon-box stat-icon-green" style="width:40px;height:40px;border-radius:8px;display:flex;align-items:center;justify-content:center;background:#f0fff4;">
+                            <svg viewBox="0 0 24 24" width="20" height="20" stroke="#28a745" fill="none" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+                        </div>
+                        <div>
+                            <div style="font-size:12px;color:#4a5568;font-weight:500;">Currently Sitting In</div>
+                            <div style="font-size:22px;font-weight:700;color:#28a745;"><?= $currently_sitin ?></div>
+                        </div>
                     </div>
-                </div>
-                
-                <div class="stat-item" style="display:flex;align-items:center;gap:14px;padding:10px 14px;background:#f8f9fa;border-radius:8px;border-left:4px solid #e67e22;">
-                    <div class="stat-icon-box stat-icon-orange" style="width:40px;height:40px;border-radius:8px;display:flex;align-items:center;justify-content:center;background:#fff8f0;">
-                        <svg viewBox="0 0 24 24" width="20" height="20" stroke="#e67e22" fill="none" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/></svg>
-                    </div>
-                    <div>
-                        <div style="font-size:12px;color:#4a5568;font-weight:500;">Total Sit-in Records</div>
-                        <div style="font-size:22px;font-weight:700;color:#e67e22;"><?= $total_sitin ?></div>
+                    
+                    <div class="stat-item" style="display:flex;align-items:center;gap:14px;padding:10px 14px;background:#f8f9fa;border-radius:8px;border-left:4px solid #e67e22;">
+                        <div class="stat-icon-box stat-icon-orange" style="width:40px;height:40px;border-radius:8px;display:flex;align-items:center;justify-content:center;background:#fff8f0;">
+                            <svg viewBox="0 0 24 24" width="20" height="20" stroke="#e67e22" fill="none" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/></svg>
+                        </div>
+                        <div>
+                            <div style="font-size:12px;color:#4a5568;font-weight:500;">Total Sit-in Records</div>
+                            <div style="font-size:22px;font-weight:700;color:#e67e22;"><?= $total_sitin ?></div>
+                        </div>
                     </div>
                 </div>
             </div>
             
-            <div class="chart-wrap" style="padding:10px 16px 16px;display:flex;justify-content:center;">
-                <canvas id="purposeChart" style="max-width:280px;max-height:280px;"></canvas>
+            <!-- CHART CARD (Below Statistics) -->
+            <div class="card" style="border-radius:12px;box-shadow:0 4px 12px rgba(0,0,0,0.08);overflow:hidden;border:none;">
+                <div class="card-head" style="background:linear-gradient(135deg, #1e3a5f, #2a5a8a);padding:14px 18px;">
+                    <div style="display:flex;align-items:center;gap:8px;">
+                        <span style="font-size:18px;">📊</span>
+                        <h2 style="color:#fff;font-size:14px;font-weight:700;text-transform:uppercase;letter-spacing:0.05em;">Sit-in Analytics</h2>
+                    </div>
+                </div>
+                <div class="chart-wrap" style="padding:20px;display:flex;justify-content:center;">
+                    <canvas id="purposeChart" style="max-width:400px;max-height:400px;width:100%;"></canvas>
+                </div>
             </div>
         </div>
         
-        <!-- ANNOUNCEMENTS CARD -->
-        <div class="card" style="border-radius:12px;box-shadow:0 4px 12px rgba(0,0,0,0.08);overflow:hidden;border:none;">
-            <div class="card-head" style="background:linear-gradient(135deg, #1e3a5f, #2a5a8a);padding:14px 18px;">
-                <div style="display:flex;align-items:center;gap:8px;">
-                    <span style="font-size:18px;">📢</span>
-                    <h2 style="color:#fff;font-size:14px;font-weight:700;text-transform:uppercase;letter-spacing:0.05em;">Announcements</h2>
-                </div>
-            </div>
-            
-            <div class="ann-form" style="padding:16px 18px;border-bottom:1px solid #eef0f3;">
-                <form method="POST">
-                    <textarea name="content" placeholder="Write a new announcement..." style="width:100%;padding:10px 12px;border:1px solid #d0d7e2;border-radius:8px;font-family:'Plus Jakarta Sans',sans-serif;font-size:13px;resize:vertical;min-height:80px;outline:none;transition:border-color 0.2s;" onfocus="this.style.borderColor='#1e3a5f'" onblur="this.style.borderColor='#d0d7e2'"></textarea>
-                    <button type="submit" name="add_announcement" style="padding:8px 20px;border:none;border-radius:6px;background:#28a745;color:#fff;font-size:13px;font-weight:600;font-family:'Plus Jakarta Sans',sans-serif;cursor:pointer;transition:all 0.2s;margin-top:8px;" onmouseover="this.style.background='#218838'" onmouseout="this.style.background='#28a745'">
-                        ➕ Post Announcement
-                    </button>
-                </form>
-            </div>
-            
-            <div class="ann-posted-title" style="padding:12px 18px 4px;font-size:13px;font-weight:700;color:#1e3a5f;">📋 Recent Announcements</div>
-            
-            <div class="ann-scroll" style="max-height:400px;overflow-y:auto;">
-                <?php if ($announcements): foreach ($announcements as $ann): ?>
-                <div class="ann-item" style="padding:12px 18px;border-bottom:1px solid #f0f2f5;transition:background 0.2s;" onmouseover="this.style.background='#f8f9fa'" onmouseout="this.style.background=''">
-                    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;">
-                        <div style="font-size:12px;font-weight:600;color:#1e3a5f;">
-                            <?= htmlspecialchars($ann['admin_name']) ?>
-                            <span style="font-weight:400;color:#9aa5b4;font-size:11px;">| <?= date('M d, Y', strtotime($ann['created_at'])) ?></span>
-                        </div>
-                        <form method="POST" style="display:inline;">
-                            <input type="hidden" name="ann_id" value="<?= $ann['id'] ?>"/>
-                            <button type="submit" name="delete_announcement" style="padding:2px 8px;border-radius:4px;font-size:11px;font-weight:600;cursor:pointer;border:none;background:#dc3545;color:#fff;transition:all 0.2s;" onmouseover="this.style.background='#c82333'" onmouseout="this.style.background='#dc3545'" onclick="return confirm('Delete this announcement?')">
-                                ✕
-                            </button>
-                        </form>
+        <!-- RIGHT COLUMN: Announcements (Full Height) -->
+        <div style="display:flex;flex-direction:column;gap:20px;">
+            <!-- ANNOUNCEMENTS CARD (Full Height) -->
+            <div class="card" style="border-radius:12px;box-shadow:0 4px 12px rgba(0,0,0,0.08);overflow:hidden;border:none;height:100%;display:flex;flex-direction:column;">
+                <div class="card-head" style="background:linear-gradient(135deg, #1e3a5f, #2a5a8a);padding:14px 18px;">
+                    <div style="display:flex;align-items:center;gap:8px;">
+                        <span style="font-size:18px;">📢</span>
+                        <h2 style="color:#fff;font-size:14px;font-weight:700;text-transform:uppercase;letter-spacing:0.05em;">Announcements</h2>
                     </div>
-                    <?php if ($ann['content']): ?>
-                        <div style="font-size:13px;color:#4a5568;line-height:1.6;"><?= htmlspecialchars($ann['content']) ?></div>
+                </div>
+                
+                <div class="ann-form" style="padding:16px 18px;border-bottom:1px solid #eef0f3;">
+                    <form method="POST">
+                        <textarea name="content" placeholder="Write a new announcement..." style="width:100%;padding:10px 12px;border:1px solid #d0d7e2;border-radius:8px;font-family:'Plus Jakarta Sans',sans-serif;font-size:13px;resize:vertical;min-height:80px;outline:none;transition:border-color 0.2s;" onfocus="this.style.borderColor='#1e3a5f'" onblur="this.style.borderColor='#d0d7e2'"></textarea>
+                        <button type="submit" name="add_announcement" style="padding:8px 20px;border:none;border-radius:6px;background:#28a745;color:#fff;font-size:13px;font-weight:600;font-family:'Plus Jakarta Sans',sans-serif;cursor:pointer;transition:all 0.2s;margin-top:8px;" onmouseover="this.style.background='#218838'" onmouseout="this.style.background='#28a745'">
+                            ➕ Post Announcement
+                        </button>
+                    </form>
+                </div>
+                
+                <div class="ann-posted-title" style="padding:12px 18px 4px;font-size:13px;font-weight:700;color:#1e3a5f;">📋 Recent Announcements</div>
+                
+                <div class="ann-scroll" style="flex:1;overflow-y:auto;">
+                    <?php if ($announcements): foreach ($announcements as $ann): ?>
+                    <div class="ann-item" style="padding:12px 18px;border-bottom:1px solid #f0f2f5;transition:background 0.2s;" onmouseover="this.style.background='#f8f9fa'" onmouseout="this.style.background=''">
+                        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;">
+                            <div style="font-size:12px;font-weight:600;color:#1e3a5f;">
+                                <?= htmlspecialchars($ann['admin_name']) ?>
+                                <span style="font-weight:400;color:#9aa5b4;font-size:11px;">| <?= date('M d, Y', strtotime($ann['created_at'])) ?></span>
+                            </div>
+                            <form method="POST" style="display:inline;">
+                                <input type="hidden" name="ann_id" value="<?= $ann['id'] ?>"/>
+                                <button type="submit" name="delete_announcement" style="padding:2px 8px;border-radius:4px;font-size:11px;font-weight:600;cursor:pointer;border:none;background:#dc3545;color:#fff;transition:all 0.2s;" onmouseover="this.style.background='#c82333'" onmouseout="this.style.background='#dc3545'" onclick="return confirm('Delete this announcement?')">
+                                    ✕
+                                </button>
+                            </form>
+                        </div>
+                        <?php if ($ann['content']): ?>
+                            <div style="font-size:13px;color:#4a5568;line-height:1.6;"><?= htmlspecialchars($ann['content']) ?></div>
+                        <?php endif; ?>
+                    </div>
+                    <?php endforeach; else: ?>
+                    <div style="padding:20px;text-align:center;color:#9aa5b4;font-size:13px;">No announcements yet.</div>
                     <?php endif; ?>
                 </div>
-                <?php endforeach; else: ?>
-                <div style="padding:20px;text-align:center;color:#9aa5b4;font-size:13px;">No announcements yet.</div>
-                <?php endif; ?>
             </div>
         </div>
         
@@ -505,8 +542,8 @@ tbody td{padding:8px 11px;font-size:13px;color:var(--gray-600);}
         <span style="display:block;font-size:13px;font-weight:400;color:#7a8a9e;margin-top:4px;">Manage student accounts and their remaining sessions</span>
     </div>
     
-    <div class="toolbar" style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;flex-wrap:wrap;gap:10px;background:#fff;padding:12px 16px;border-radius:8px;border:1px solid #e2e6ea;max-width:1200px;margin-left:auto;margin-right:auto;">
-        <div style="display:flex;align-items:center;gap:10px;font-size:13px;color:var(--gray-600);flex-wrap:wrap;">
+    <div class="toolbar" style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;flex-wrap:wrap;gap:10px;background:var(--card-bg);padding:12px 16px;border-radius:8px;border:1px solid var(--border-color);max-width:1200px;margin-left:auto;margin-right:auto;">
+        <div style="display:flex;align-items:center;gap:10px;font-size:13px;color:var(--text-color);flex-wrap:wrap;">
             <button class="btn btn-blue" onclick="openModal('addStudentModal')" style="padding:8px 16px;border-radius:6px;font-size:13px;font-weight:600;cursor:pointer;border:none;background:#1e3a5f;color:#fff;transition:all 0.2s;" onmouseover="this.style.background='#16304f'" onmouseout="this.style.background='#1e3a5f'">
                 ➕ Add Student
             </button>
@@ -519,9 +556,9 @@ tbody td{padding:8px 11px;font-size:13px;color:var(--gray-600);}
                 </button>
             </form>
         </div>
-        <div style="display:flex;align-items:center;gap:8px;font-size:13px;color:var(--gray-600);">
+        <div style="display:flex;align-items:center;gap:8px;font-size:13px;color:var(--text-color);">
             <span style="font-weight:600;color:#1e3a5f;">🔍 Search:</span>
-            <input type="text" class="search-input" id="studentSearch" oninput="filterTable('studentTable',this.value)" placeholder="Type to filter..." style="padding:6px 12px;border:1px solid #d0d7e2;border-radius:6px;font-size:13px;width:200px;outline:none;transition:border-color 0.2s;" onfocus="this.style.borderColor='#1e3a5f'" onblur="this.style.borderColor='#d0d7e2'"/>
+            <input type="text" class="search-input" id="studentSearch" oninput="filterTable('studentTable',this.value)" placeholder="Type to filter..." style="padding:6px 12px;border:1px solid var(--border-color);border-radius:6px;font-size:13px;width:200px;outline:none;transition:border-color 0.2s;" onfocus="this.style.borderColor='#1e3a5f'" onblur="this.style.borderColor='#d0d7e2'"/>
         </div>
     </div>
     
@@ -549,7 +586,7 @@ tbody td{padding:8px 11px;font-size:13px;color:var(--gray-600);}
                             <span style="display:inline-block;background:#e8edf5;padding:3px 10px;border-radius:6px;font-size:12px;"><?= htmlspecialchars($s['year_level']) ?></span>
                         </td>
                         <td style="padding:12px 16px;font-size:13px;color:#4a5568;font-weight:500;">
-                            <span style="display:inline-block;background:#e8edf5;padding:3px 10px;border-radius:6px;font-size:12px;"><?= htmlspecialchars($s['course']) ?></span>
+                                                       <span style="display:inline-block;background:#e8edf5;padding:3px 10px;border-radius:6px;font-size:12px;"><?= htmlspecialchars($s['course']) ?></span>
                         </td>
                         <td style="padding:12px 16px;font-size:13px;color:#4a5568;font-weight:500;">
                             <?php $sessColor = $s['session'] <= 5 ? '#dc2626' : ($s['session'] <= 10 ? '#ea580c' : '#16a34a'); ?>
@@ -576,13 +613,14 @@ tbody td{padding:8px 11px;font-size:13px;color:var(--gray-600);}
             </table>
         </div>
         <div style="padding:14px 18px;border-top:1px solid #eef0f3;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;background:#fafbfc;">
-            <span style="font-size:12.5px;color:var(--gray-400);font-weight:500;">Showing <?= count($students) ?> student<?= count($students)!==1?'s':'' ?></span>
+            <span style="font-size:12.5px;color:var(--text-color);font-weight:500;">Showing <?= count($students) ?> student<?= count($students)!==1?'s':'' ?></span>
             <div style="display:flex;align-items:center;gap:3px;">
                 <!-- Pagination buttons can go here if needed -->
             </div>
         </div>
     </div>
 </div>
+
 
 <!-- ════════════ SIT-IN ════════════ -->
 <div id="page-sitin" class="page-section <?= $page==='sitin'?'active':'' ?>">
@@ -594,15 +632,15 @@ tbody td{padding:8px 11px;font-size:13px;color:var(--gray-600);}
         <span style="display:block;font-size:13px;font-weight:400;color:#7a8a9e;margin-top:4px;">Students currently sitting in the laboratory</span>
     </div>
     
-    <div class="toolbar" style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;flex-wrap:wrap;gap:10px;background:#fff;padding:12px 16px;border-radius:8px;border:1px solid #e2e6ea;max-width:1200px;margin-left:auto;margin-right:auto;">
-        <div style="display:flex;align-items:center;gap:10px;font-size:13px;color:var(--gray-600);flex-wrap:wrap;">
+    <div class="toolbar" style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;flex-wrap:wrap;gap:10px;background:var(--card-bg);padding:12px 16px;border-radius:8px;border:1px solid var(--border-color);max-width:1200px;margin-left:auto;margin-right:auto;">
+        <div style="display:flex;align-items:center;gap:10px;font-size:13px;color:var(--text-color);flex-wrap:wrap;">
             <button class="btn btn-blue" onclick="openBlankSitin()" style="padding:8px 16px;border-radius:6px;font-size:13px;font-weight:600;cursor:pointer;border:none;background:#1e3a5f;color:#fff;transition:all 0.2s;" onmouseover="this.style.background='#16304f'" onmouseout="this.style.background='#1e3a5f'">
                 ➕ Sit In Student
             </button>
         </div>
-        <div style="display:flex;align-items:center;gap:8px;font-size:13px;color:var(--gray-600);">
+        <div style="display:flex;align-items:center;gap:8px;font-size:13px;color:var(--text-color);">
             <span style="font-weight:600;color:#1e3a5f;">🔍 Search:</span>
-            <input type="text" class="search-input" oninput="filterTable('sitinTable',this.value)" placeholder="Type to filter..." style="padding:6px 12px;border:1px solid #d0d7e2;border-radius:6px;font-size:13px;width:200px;outline:none;transition:border-color 0.2s;" onfocus="this.style.borderColor='#1e3a5f'" onblur="this.style.borderColor='#d0d7e2'"/>
+            <input type="text" class="search-input" oninput="filterTable('sitinTable',this.value)" placeholder="Type to filter..." style="padding:6px 12px;border:1px solid var(--border-color);border-radius:6px;font-size:13px;width:200px;outline:none;transition:border-color 0.2s;" onfocus="this.style.borderColor='#1e3a5f'" onblur="this.style.borderColor='#d0d7e2'"/>
         </div>
     </div>
     
@@ -684,7 +722,7 @@ tbody td{padding:8px 11px;font-size:13px;color:var(--gray-600);}
             </table>
         </div>
         <div style="padding:14px 18px;border-top:1px solid #eef0f3;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;background:#fafbfc;">
-            <span style="font-size:12.5px;color:var(--gray-400);font-weight:500;">Showing <?= count($current_sitin) ?> active sit-in<?= count($current_sitin)!==1?'s':'' ?></span>
+            <span style="font-size:12.5px;color:var(--text-color);font-weight:500;">Showing <?= count($current_sitin) ?> active sit-in<?= count($current_sitin)!==1?'s':'' ?></span>
             <div style="display:flex;align-items:center;gap:12px;font-size:12px;color:#4a5568;">
                 <span><span style="color:#16a34a;font-weight:700;">●</span> &gt;10 sessions</span>
                 <span><span style="color:#ea580c;font-weight:700;">●</span> 6–10 sessions</span>
@@ -693,7 +731,6 @@ tbody td{padding:8px 11px;font-size:13px;color:var(--gray-600);}
         </div>
     </div>
 </div>
-
 <!-- ════════════ RECORDS ════════════ -->
 <div id="page-records" class="page-section <?= $page==='records'?'active':'' ?>">
     <div class="page-title" style="margin-bottom:28px;">
@@ -704,10 +741,10 @@ tbody td{padding:8px 11px;font-size:13px;color:var(--gray-600);}
         <span style="display:block;font-size:13px;font-weight:400;color:#7a8a9e;margin-top:4px;">Complete history of all sit-in sessions with detailed tracking</span>
     </div>
     
-    <div class="toolbar" style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;flex-wrap:wrap;gap:10px;background:#fff;padding:12px 16px;border-radius:8px;border:1px solid #e2e6ea;max-width:1200px;margin-left:auto;margin-right:auto;">
-        <div style="display:flex;align-items:center;gap:10px;font-size:13px;color:var(--gray-600);flex-wrap:wrap;">
+    <div class="toolbar" style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;flex-wrap:wrap;gap:10px;background:var(--card-bg);padding:12px 16px;border-radius:8px;border:1px solid var(--border-color);max-width:1200px;margin-left:auto;margin-right:auto;">
+        <div style="display:flex;align-items:center;gap:10px;font-size:13px;color:var(--text-color);flex-wrap:wrap;">
             <span style="font-weight:600;color:#1e3a5f;">Show</span>
-            <select class="entries-select" id="recordsEntries" onchange="paginateRecords()" style="padding:5px 10px;border:1px solid #d0d7e2;border-radius:6px;font-size:13px;background:#fff;font-weight:500;">
+            <select class="entries-select" id="recordsEntries" onchange="paginateRecords()" style="padding:5px 10px;border:1px solid var(--border-color);border-radius:6px;font-size:13px;background:var(--card-bg);font-weight:500;">
                 <option value="10">10</option>
                 <option value="25">25</option>
                 <option value="50">50</option>
@@ -715,9 +752,9 @@ tbody td{padding:8px 11px;font-size:13px;color:var(--gray-600);}
             </select>
             <span>entries</span>
         </div>
-        <div style="display:flex;align-items:center;gap:8px;font-size:13px;color:var(--gray-600);">
+        <div style="display:flex;align-items:center;gap:8px;font-size:13px;color:var(--text-color);">
             <span style="font-weight:600;color:#1e3a5f;">🔍 Search:</span>
-            <input type="text" class="search-input" id="recordsSearch" oninput="filterRecords(this.value)" placeholder="Type to filter..." style="padding:6px 12px;border:1px solid #d0d7e2;border-radius:6px;font-size:13px;width:200px;outline:none;transition:border-color 0.2s;" onfocus="this.style.borderColor='#1e3a5f'" onblur="this.style.borderColor='#d0d7e2'"/>
+            <input type="text" class="search-input" id="recordsSearch" oninput="filterRecords(this.value)" placeholder="Type to filter..." style="padding:6px 12px;border:1px solid var(--border-color);border-radius:6px;font-size:13px;width:200px;outline:none;transition:border-color 0.2s;" onfocus="this.style.borderColor='#1e3a5f'" onblur="this.style.borderColor='#d0d7e2'"/>
         </div>
     </div>
     
@@ -726,16 +763,16 @@ tbody td{padding:8px 11px;font-size:13px;color:var(--gray-600);}
             <table id="recordsTable" style="width:100%;border-collapse:collapse;">
                 <thead>
                     <tr style="background:linear-gradient(135deg, #1e3a5f, #2a5a8a);color:#fff;">
-                        <th style="padding:14px 16px;text-align:left;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;border-right:1px solid rgba(255,255,255,0.05);">#</th>
-                        <th style="padding:14px 16px;text-align:left;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;border-right:1px solid rgba(255,255,255,0.05);">ID Number</th>
-                        <th style="padding:14px 16px;text-align:left;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;border-right:1px solid rgba(255,255,255,0.05);">Name</th>
-                        <th style="padding:14px 16px;text-align:left;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;border-right:1px solid rgba(255,255,255,0.05);">Purpose</th>
-                        <th style="padding:14px 16px;text-align:left;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;border-right:1px solid rgba(255,255,255,0.05);">Lab</th>
-                        <th style="padding:14px 16px;text-align:left;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;border-right:1px solid rgba(255,255,255,0.05);">Login</th>
-                        <th style="padding:14px 16px;text-align:left;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;border-right:1px solid rgba(255,255,255,0.05);">Logout</th>
-                        <th style="padding:14px 16px;text-align:left;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;border-right:1px solid rgba(255,255,255,0.05);">Duration</th>
-                        <th style="padding:14px 16px;text-align:left;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;border-right:1px solid rgba(255,255,255,0.05);">Date</th>
-                        <th style="padding:14px 16px;text-align:left;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;border-right:1px solid rgba(255,255,255,0.05);">Status</th>
+                        <th style="padding:14px 16px;text-align:left;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;">#</th>
+                        <th style="padding:14px 16px;text-align:left;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;">ID Number</th>
+                        <th style="padding:14px 16px;text-align:left;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;">Name</th>
+                        <th style="padding:14px 16px;text-align:left;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;">Purpose</th>
+                        <th style="padding:14px 16px;text-align:left;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;">Lab</th>
+                        <th style="padding:14px 16px;text-align:left;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;">Login</th>
+                        <th style="padding:14px 16px;text-align:left;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;">Logout</th>
+                        <th style="padding:14px 16px;text-align:left;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;">Duration</th>
+                        <th style="padding:14px 16px;text-align:left;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;">Date</th>
+                        <th style="padding:14px 16px;text-align:left;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;">Status</th>
                         <th style="padding:14px 16px;text-align:left;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;">Action</th>
                     </tr>
                 </thead>
@@ -750,7 +787,7 @@ tbody td{padding:8px 11px;font-size:13px;color:var(--gray-600);}
                         }
                         $isActive = empty($r['logout_time']);
                     ?>
-                    <tr style="border-bottom:1px solid #eef0f3;transition:all 0.2s;cursor:default;background:<?= $cnt % 2 === 0 ? '#fafbfc' : '#ffffff' ?>;" onmouseover="this.style.background='#f0f4f9';this.style.transform='scale(1.002)';" onmouseout="this.style.background='<?= $cnt % 2 === 0 ? '#fafbfc' : '#ffffff' ?>';this.style.transform='scale(1)';">
+                    <tr style="border-bottom:1px solid #eef0f3;transition:all 0.2s;cursor:default;background:<?= $cnt % 2 === 0 ? '#fafbfc' : '#ffffff' ?>;">
                         <td style="padding:12px 16px;font-size:13px;color:#4a5568;font-weight:600;text-align:center;"><?= $cnt ?></td>
                         <td style="padding:12px 16px;font-size:13px;color:#1e3a5f;font-weight:600;font-family:monospace;"><?= htmlspecialchars($r['id_number']) ?></td>
                         <td style="padding:12px 16px;font-size:13px;color:#1e2a38;font-weight:500;">
@@ -762,28 +799,30 @@ tbody td{padding:8px 11px;font-size:13px;color:var(--gray-600);}
                         <td style="padding:12px 16px;font-size:13px;color:#4a5568;font-weight:600;">
                             <span style="display:inline-block;background:#e8edf5;padding:3px 10px;border-radius:6px;font-size:12px;"><?= htmlspecialchars($r['laboratory']) ?></span>
                         </td>
-                        <td style="padding:12px 16px;font-size:13px;color:#4a5568;font-weight:500;font-family:monospace;white-space:nowrap;">
-    <?php if (!empty($r['login_time'])): ?>
-        <?= date('h:i A', strtotime($r['login_time'])) ?>
-    <?php else: ?>
-        <span style="color:#c0c8d4;">—</span>
-    <?php endif; ?>
-</td>
-<td style="padding:12px 16px;font-size:13px;color:#4a5568;font-weight:500;font-family:monospace;white-space:nowrap;">
-    <?php if (!empty($r['logout_time'])): ?>
-        <?= date('h:i A', strtotime($r['logout_time'])) ?>
-    <?php else: ?>
-        <span style="color:#c0c8d4;">—</span>
-    <?php endif; ?>
-</td>
-
-                        <td style="padding:12px 16px;font-size:13px;color:#4a5568;font-weight:500;font-family:monospace;white-space:nowrap;">
-    <?php if (!empty($r['date'])): ?>
-        <?= htmlspecialchars($r['date']) ?>
-    <?php else: ?>
-        <span style="color:#c0c8d4;">—</span>
-    <?php endif; ?>
-</td>
+                        <td style="padding:12px 16px;font-size:13px;color:#4a5568;font-weight:500;font-family:monospace;">
+                            <?php if (!empty($r['login_time'])): ?>
+                                <?= date('h:i A', strtotime($r['login_time'])) ?>
+                            <?php else: ?>
+                                <span style="color:#c0c8d4;">—</span>
+                            <?php endif; ?>
+                        </td>
+                        <td style="padding:12px 16px;font-size:13px;color:#4a5568;font-weight:500;font-family:monospace;">
+                            <?php if (!empty($r['logout_time'])): ?>
+                                <?= date('h:i A', strtotime($r['logout_time'])) ?>
+                            <?php else: ?>
+                                <span style="color:#c0c8d4;">—</span>
+                            <?php endif; ?>
+                        </td>
+                        <td style="padding:12px 16px;font-size:13px;color:#4a5568;font-weight:500;font-family:monospace;">
+                            <?= $duration ?: '—' ?>
+                        </td>
+                        <td style="padding:12px 16px;font-size:13px;color:#4a5568;font-weight:500;font-family:monospace;">
+                            <?php if (!empty($r['date'])): ?>
+                                <?= htmlspecialchars($r['date']) ?>
+                            <?php else: ?>
+                                <span style="color:#c0c8d4;">—</span>
+                            <?php endif; ?>
+                        </td>
                         <td style="padding:12px 16px;">
                             <?php if ($isActive): ?>
                                 <span style="display:inline-flex;align-items:center;gap:4px;padding:4px 14px;border-radius:20px;font-size:11px;font-weight:600;background:#d4edda;color:#155724;border:1px solid #b7ebc5;">
@@ -797,18 +836,19 @@ tbody td{padding:8px 11px;font-size:13px;color:var(--gray-600);}
                                 </span>
                             <?php endif; ?>
                         </td>
-                      <td style="padding:12px 16px;white-space:nowrap;">
-    <?php if ($isActive): ?>
-        <form method="POST" style="display:inline;">
-            <input type="hidden" name="sitin_id" value="<?= $r['id'] ?>"/>
-            <button type="submit" name="logout_sitin" style="padding:4px 12px;border-radius:4px;font-size:11px;font-weight:600;cursor:pointer;border:none;background:#dc3545;color:#fff;" onmouseover="this.style.background='#c82333'" onmouseout="this.style.background='#dc3545'" onclick="return confirm('Log out this student?')">
-                Log Out
-            </button>
-        </form>
-    <?php else: ?>
-        <span style="font-size:12px;color:#c0c8d4;">—</span>
-    <?php endif; ?>
-</td>                    </tr>
+                        <td style="padding:12px 16px;">
+                            <?php if ($isActive): ?>
+                                <form method="POST" style="display:inline;">
+                                    <input type="hidden" name="sitin_id" value="<?= $r['id'] ?>"/>
+                                    <button type="submit" name="logout_sitin" class="btn btn-red btn-sm" onclick="return confirm('Log out this student?')">
+                                        Log Out
+                                    </button>
+                                </form>
+                            <?php else: ?>
+                                <span style="font-size:12px;color:#c0c8d4;">—</span>
+                            <?php endif; ?>
+                        </td>
+                    </tr>
                     <?php endforeach; else: ?>
                     <tr><td colspan="11" style="padding:40px;text-align:center;color:#9aa5b4;font-size:14px;font-style:italic;">📭 No sit-in records found yet.</td></tr>
                     <?php endif; ?>
@@ -816,7 +856,7 @@ tbody td{padding:8px 11px;font-size:13px;color:var(--gray-600);}
             </table>
         </div>
         <div style="padding:14px 18px;border-top:1px solid #eef0f3;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;background:#fafbfc;">
-            <span style="font-size:12.5px;color:var(--gray-400);font-weight:500;" id="recordsInfo"></span>
+            <span style="font-size:12.5px;color:var(--text-color);font-weight:500;" id="recordsInfo"></span>
             <div style="display:flex;align-items:center;gap:3px;">
                 <button class="page-btn" onclick="goRecordsPage('first')" style="border:none;background:transparent;color:#4a5568;cursor:pointer;padding:4px 8px;font-size:14px;">«</button>
                 <button class="page-btn" onclick="goRecordsPage('prev')" style="border:none;background:transparent;color:#4a5568;cursor:pointer;padding:4px 8px;font-size:14px;">‹</button>
@@ -827,7 +867,6 @@ tbody td{padding:8px 11px;font-size:13px;color:var(--gray-600);}
         </div>
     </div>
 </div>
-
 <!-- ════════════ SESSIONS ════════════ -->
 <div id="page-sessions" class="page-section <?= $page==='sessions'?'active':'' ?>">
     <div class="page-title" style="margin-bottom:28px;">
@@ -840,11 +879,12 @@ tbody td{padding:8px 11px;font-size:13px;color:var(--gray-600);}
 
 
 
+
     
-    <div class="toolbar" style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;flex-wrap:wrap;gap:10px;background:#fff;padding:12px 16px;border-radius:8px;border:1px solid #e2e6ea;max-width:1200px;margin-left:auto;margin-right:auto;">
-        <div style="display:flex;align-items:center;gap:10px;font-size:13px;color:var(--gray-600);flex-wrap:wrap;">
+    <div class="toolbar" style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;flex-wrap:wrap;gap:10px;background:var(--card-bg);padding:12px 16px;border-radius:8px;border:1px solid var(--border-color);max-width:1200px;margin-left:auto;margin-right:auto;">
+        <div style="display:flex;align-items:center;gap:10px;font-size:13px;color:var(--text-color);flex-wrap:wrap;">
             <span style="font-weight:600;color:#1e3a5f;">Show</span>
-            <select class="entries-select" id="sessionsEntries" onchange="paginateSessions()" style="padding:5px 10px;border:1px solid #d0d7e2;border-radius:6px;font-size:13px;background:#fff;font-weight:500;">
+            <select class="entries-select" id="sessionsEntries" onchange="paginateSessions()" style="padding:5px 10px;border:1px solid #d0d7e2;border-radius:6px;font-size:13px;background:var(--card-bg);font-weight:500;">
                 <option value="10">10</option>
                 <option value="25">25</option>
                 <option value="50">50</option>
@@ -852,9 +892,9 @@ tbody td{padding:8px 11px;font-size:13px;color:var(--gray-600);}
             </select>
             <span>entries</span>
         </div>
-        <div style="display:flex;align-items:center;gap:8px;font-size:13px;color:var(--gray-600);">
+        <div style="display:flex;align-items:center;gap:8px;font-size:13px;color:var(--text-color);">
             <span style="font-weight:600;color:#1e3a5f;">🔍 Search:</span>
-            <input type="text" class="search-input" id="sessionsSearch" oninput="filterSessions(this.value)" placeholder="Type to filter..." style="padding:6px 12px;border:1px solid #d0d7e2;border-radius:6px;font-size:13px;width:200px;outline:none;transition:border-color 0.2s;" onfocus="this.style.borderColor='#1e3a5f'" onblur="this.style.borderColor='#d0d7e2'"/>
+            <input type="text" class="search-input" id="sessionsSearch" oninput="filterSessions(this.value)" placeholder="Type to filter..." style="padding:6px 12px;border:1px solid var(--border-color);border-radius:6px;font-size:13px;width:200px;outline:none;transition:border-color 0.2s;" onfocus="this.style.borderColor='#1e3a5f'" onblur="this.style.borderColor='#d0d7e2'"/>
         </div>
     </div>
     
@@ -863,16 +903,16 @@ tbody td{padding:8px 11px;font-size:13px;color:var(--gray-600);}
             <table id="sessionsTable" style="width:100%;border-collapse:collapse;">
                 <thead>
                     <tr style="background:linear-gradient(135deg, #1e3a5f, #2a5a8a);color:#fff;">
-                        <th style="padding:14px 16px;text-align:left;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;border-right:1px solid rgba(255,255,255,0.05);">#</th>
-                        <th style="padding:14px 16px;text-align:left;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;border-right:1px solid rgba(255,255,255,0.05);">ID Number</th>
-                        <th style="padding:14px 16px;text-align:left;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;border-right:1px solid rgba(255,255,255,0.05);">Name</th>
-                        <th style="padding:14px 16px;text-align:left;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;border-right:1px solid rgba(255,255,255,0.05);">Purpose</th>
-                        <th style="padding:14px 16px;text-align:left;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;border-right:1px solid rgba(255,255,255,0.05);">Lab</th>
-                        <th style="padding:14px 16px;text-align:left;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;border-right:1px solid rgba(255,255,255,0.05);">PC</th>
-                        <th style="padding:14px 16px;text-align:left;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;border-right:1px solid rgba(255,255,255,0.05);">Time-in</th>
-                        <th style="padding:14px 16px;text-align:left;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;border-right:1px solid rgba(255,255,255,0.05);">Time-out</th>
-                        <th style="padding:14px 16px;text-align:left;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;border-right:1px solid rgba(255,255,255,0.05);">Duration</th>
-                        <th style="padding:14px 16px;text-align:left;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;border-right:1px solid rgba(255,255,255,0.05);">Date</th>
+                        <th style="padding:14px 16px;text-align:left;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;">#</th>
+                        <th style="padding:14px 16px;text-align:left;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;">ID Number</th>
+                        <th style="padding:14px 16px;text-align:left;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;">Name</th>
+                        <th style="padding:14px 16px;text-align:left;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;">Purpose</th>
+                        <th style="padding:14px 16px;text-align:left;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;">Lab</th>
+                        <th style="padding:14px 16px;text-align:left;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;">PC</th>
+                        <th style="padding:14px 16px;text-align:left;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;">Time-in</th>
+                        <th style="padding:14px 16px;text-align:left;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;">Time-out</th>
+                        <th style="padding:14px 16px;text-align:left;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;">Duration</th>
+                        <th style="padding:14px 16px;text-align:left;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;">Date</th>
                         <th style="padding:14px 16px;text-align:left;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;">Status</th>
                     </tr>
                 </thead>
@@ -888,7 +928,7 @@ tbody td{padding:8px 11px;font-size:13px;color:var(--gray-600);}
                         $isActive = empty($s['logout_time']);
                         $pc_number = isset($s['pc_number']) ? $s['pc_number'] : null;
                     ?>
-                    <tr style="border-bottom:1px solid #eef0f3;transition:all 0.2s;cursor:default;background:<?= $cnt % 2 === 0 ? '#fafbfc' : '#ffffff' ?>;" onmouseover="this.style.background='#f0f4f9';this.style.transform='scale(1.002)';" onmouseout="this.style.background='<?= $cnt % 2 === 0 ? '#fafbfc' : '#ffffff' ?>';this.style.transform='scale(1)';">
+                    <tr style="border-bottom:1px solid #eef0f3;transition:all 0.2s;cursor:default;background:<?= $cnt % 2 === 0 ? '#fafbfc' : '#ffffff' ?>;">
                         <td style="padding:12px 16px;font-size:13px;color:#4a5568;font-weight:600;text-align:center;"><?= $cnt ?></td>
                         <td style="padding:12px 16px;font-size:13px;color:#1e3a5f;font-weight:600;font-family:monospace;"><?= htmlspecialchars($s['id_number']) ?></td>
                         <td style="padding:12px 16px;font-size:13px;color:#1e2a38;font-weight:500;">
@@ -956,7 +996,7 @@ tbody td{padding:8px 11px;font-size:13px;color:var(--gray-600);}
             </table>
         </div>
         <div style="padding:14px 18px;border-top:1px solid #eef0f3;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;background:#fafbfc;">
-            <span style="font-size:12.5px;color:var(--gray-400);font-weight:500;" id="sessionsInfo"></span>
+            <span style="font-size:12.5px;color:var(--text-color);font-weight:500;" id="sessionsInfo"></span>
             <div style="display:flex;align-items:center;gap:3px;">
                 <button class="page-btn" onclick="goSessionsPage('first')" style="border:none;background:transparent;color:#4a5568;cursor:pointer;padding:4px 8px;font-size:14px;">«</button>
                 <button class="page-btn" onclick="goSessionsPage('prev')" style="border:none;background:transparent;color:#4a5568;cursor:pointer;padding:4px 8px;font-size:14px;">‹</button>
@@ -967,19 +1007,6 @@ tbody td{padding:8px 11px;font-size:13px;color:var(--gray-600);}
         </div>
     </div>
 </div>
-<?php
-// Calculate totals for the report
-$total_sessions = count($all_sitin);
-$total_hours = 0;
-foreach ($all_sitin as $r) {
-    if (!empty($r['login_time']) && !empty($r['logout_time'])) {
-        $login = new DateTime($r['login_time']);
-        $logout = new DateTime($r['logout_time']);
-        $interval = $login->diff($logout);
-        $total_hours += $interval->h + ($interval->i / 60);
-    }
-}
-?>
 <!-- ════════════ REPORTS ════════════ -->
 <div id="page-reports" class="page-section <?= $page==='reports'?'active':'' ?>">
     <div class="page-title" style="margin-bottom:28px;">
@@ -990,7 +1017,19 @@ foreach ($all_sitin as $r) {
         <span style="display:block;font-size:13px;font-weight:400;color:#7a8a9e;margin-top:4px;">Sit-in statistics and data visualization</span>
     </div>
     
-    <!-- Export Buttons -->
+    <!-- FIX: Calculate total_hours here -->
+    <?php
+    $total_hours = 0;
+    foreach ($all_sitin as $r) {
+        if (!empty($r['login_time']) && !empty($r['logout_time'])) {
+            $login = new DateTime($r['login_time']);
+            $logout = new DateTime($r['logout_time']);
+            $interval = $login->diff($logout);
+            $total_hours += $interval->h + ($interval->i / 60);
+        }
+    }
+    ?>
+    
     <div style="display:flex;gap:10px;margin-bottom:24px;justify-content:flex-end;flex-wrap:wrap;max-width:1200px;margin:0 auto 24px auto;">
         <a href="export_report.php?format=csv&type=all" style="padding:8px 20px;border-radius:6px;font-size:13px;font-weight:600;cursor:pointer;text-decoration:none;background:#1e3a5f;color:#fff;transition:all 0.2s;display:inline-flex;align-items:center;gap:6px;" onmouseover="this.style.background='#16304f';this.style.transform='translateY(-1px)';" onmouseout="this.style.background='#1e3a5f';this.style.transform='translateY(0)';">
             📥 Export CSV
@@ -1000,7 +1039,6 @@ foreach ($all_sitin as $r) {
         </a>
     </div>
     
-    <!-- Report Preview -->
     <div style="background:#fff;border-radius:12px;box-shadow:0 4px 12px rgba(0,0,0,0.08);padding:30px;max-width:1200px;margin:0 auto;">
         <div style="text-align:center;margin-bottom:30px;border-bottom:3px solid #1e3a5f;padding-bottom:15px;">
             <h1 style="color:#1e3a5f;font-size:24px;">📊 CCS Sit-in Report</h1>
@@ -1016,6 +1054,25 @@ foreach ($all_sitin as $r) {
                 <div style="font-size:12px;color:#9aa5b4;">Total Hours</div>
             </div>
         </div>
+        
+        <!-- FIX: Add dark mode styles for the reports table -->
+        <style>
+            body.dark-mode #page-reports table tbody td {
+                color: #000000 !important;
+            }
+            body.dark-mode #page-reports table tbody tr {
+                background-color: #ffffff !important;
+            }
+            body.dark-mode #page-reports table tbody tr:nth-child(even) {
+                background-color: #f5f5f5 !important;
+            }
+            body.dark-mode #page-reports .report-container {
+                background-color: #ffffff !important;
+            }
+            body.dark-mode #page-reports h1 {
+                color: #1e3a5f !important;
+            }
+        </style>
         
         <div style="overflow-x:auto;">
             <table style="width:100%;border-collapse:collapse;margin-top:15px;">
@@ -1045,16 +1102,16 @@ foreach ($all_sitin as $r) {
                         $isActive = empty($r['logout_time']);
                     ?>
                     <tr style="border-bottom:1px solid #eef0f3;">
-                        <td style="padding:8px 12px;font-size:12px;"><?= $cnt ?></td>
-                        <td style="padding:8px 12px;font-size:12px;font-weight:bold;"><?= htmlspecialchars($r['id_number']) ?></td>
-                        <td style="padding:8px 12px;font-size:12px;"><?= htmlspecialchars($r['fullname']) ?></td>
-                        <td style="padding:8px 12px;font-size:12px;"><?= htmlspecialchars($r['sit_purpose']) ?></td>
-                        <td style="padding:8px 12px;font-size:12px;"><?= htmlspecialchars($r['laboratory']) ?></td>
-                        <td style="padding:8px 12px;font-size:12px;"><?= htmlspecialchars($r['login_time'] ?? '—') ?></td>
-                        <td style="padding:8px 12px;font-size:12px;"><?= htmlspecialchars($r['logout_time'] ?? '—') ?></td>
-                        <td style="padding:8px 12px;font-size:12px;"><?= $duration ?: '—' ?></td>
-                        <td style="padding:8px 12px;font-size:12px;"><?= htmlspecialchars($r['date']) ?></td>
-                        <td style="padding:8px 12px;font-size:12px;font-weight:bold;"><?= $isActive ? 'Active' : 'Done' ?></td>
+                        <td style="padding:8px 12px;font-size:12px;color:#000;"><?= $cnt ?></td>
+                        <td style="padding:8px 12px;font-size:12px;font-weight:bold;color:#000;"><?= htmlspecialchars($r['id_number']) ?></td>
+                        <td style="padding:8px 12px;font-size:12px;color:#000;"><?= htmlspecialchars($r['fullname']) ?></td>
+                        <td style="padding:8px 12px;font-size:12px;color:#000;"><?= htmlspecialchars($r['sit_purpose']) ?></td>
+                        <td style="padding:8px 12px;font-size:12px;color:#000;"><?= htmlspecialchars($r['laboratory']) ?></td>
+                        <td style="padding:8px 12px;font-size:12px;color:#000;"><?= htmlspecialchars($r['login_time'] ?? '—') ?></td>
+                        <td style="padding:8px 12px;font-size:12px;color:#000;"><?= htmlspecialchars($r['logout_time'] ?? '—') ?></td>
+                        <td style="padding:8px 12px;font-size:12px;color:#000;"><?= $duration ?: '—' ?></td>
+                        <td style="padding:8px 12px;font-size:12px;color:#000;"><?= htmlspecialchars($r['date']) ?></td>
+                        <td style="padding:8px 12px;font-size:12px;font-weight:bold;color:#000;"><?= $isActive ? 'Active' : 'Done' ?></td>
                     </tr>
                     <?php endforeach; ?>
                 </tbody>
@@ -1078,7 +1135,7 @@ foreach ($all_sitin as $r) {
   
   <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:18px;flex-wrap:wrap;gap:10px;">
     <div style="display:flex;align-items:center;gap:12px;">
-      <span style="font-size:13px;font-weight:600;color:var(--gray-600);">Reservation Status:</span>
+      <span style="font-size:13px;font-weight:600;color:var(--text-color);">Reservation Status:</span>
       <span class="badge <?= $reservations_enabled ? 'badge-approved' : 'badge-rejected' ?>" style="font-size:14px;padding:4px 14px;">
         <?= $reservations_enabled ? '🟢 OPEN' : '🔴 CLOSED' ?>
       </span>
@@ -1094,7 +1151,7 @@ foreach ($all_sitin as $r) {
   
   <div class="toolbar">
     <div class="toolbar-right">
-      <span style="font-size:13px;color:var(--gray-600);">Search:</span>
+      <span style="font-size:13px;color:var(--text-color);">Search:</span>
       <input type="text" class="search-input" oninput="filterTable('reservTable',this.value)" placeholder=""/>
     </div>
   </div>
@@ -1126,7 +1183,7 @@ foreach ($all_sitin as $r) {
                 <button type="submit" name="reject_reservation" class="btn btn-red btn-sm" onclick="return confirm('Reject this reservation?')">Reject</button>
               </form>
               <?php else: ?>
-                <span style="font-size:12px;color:var(--gray-400);"><?= ucfirst($rv['status']) ?></span>
+                <span style="font-size:12px;color:var(--text-color);"><?= ucfirst($rv['status']) ?></span>
               <?php endif; ?>
             </td>
           </tr>
@@ -1139,11 +1196,14 @@ foreach ($all_sitin as $r) {
   </div>
 </div>
 
+
 </div><!-- end page-body -->
+
 
 <!-- ══════════════════════════════════════
      MODALS
 ══════════════════════════════════════ -->
+
 
 <!-- SEARCH MODAL -->
 <div class="modal-overlay" id="searchModal">
@@ -1161,6 +1221,7 @@ foreach ($all_sitin as $r) {
   </div>
 </div>
 
+
 <!-- SIT-IN FORM MODAL -->
 <div class="modal-overlay" id="sitinModal">
   <div class="modal" style="max-width:480px;">
@@ -1177,9 +1238,9 @@ foreach ($all_sitin as $r) {
             <td>
               <div style="display:flex;gap:6px;">
                 <input type="text" name="id_number" id="sitin_id_number" placeholder="Enter student ID"
-                       style="flex:1;padding:8px 11px;border:1px solid var(--blue-bd);border-radius:6px;font-size:13px;font-family:inherit;color:var(--blue-dk);outline:none;"/>
+                       style="flex:1;padding:8px 11px;border:1px solid var(--border-color);border-radius:6px;font-size:13px;font-family:inherit;color:var(--text-color);outline:none;"/>
                 <button type="button" onclick="lookupStudent()"
-                        style="padding:8px 12px;background:var(--blue);color:#fff;border:none;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer;white-space:nowrap;">
+                        style="padding:8px 12px;background:var(--nav-bg);color:#fff;border:none;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer;white-space:nowrap;">
                   Look up
                 </button>
               </div>
@@ -1189,17 +1250,17 @@ foreach ($all_sitin as $r) {
           <tr>
             <td style="font-size:13px;color:#3d607f;font-weight:600;padding-right:12px;">Student Name:</td>
             <td><input type="text" name="student_name" id="sitin_name" placeholder="Enter full name"
-                       style="width:100%;padding:8px 11px;border:1px solid var(--blue-bd);border-radius:6px;font-size:13px;font-family:inherit;color:var(--blue-dk);outline:none;"/></td>
+                       style="width:100%;padding:8px 11px;border:1px solid var(--border-color);border-radius:6px;font-size:13px;font-family:inherit;color:var(--text-color);outline:none;"/></td>
           </tr>
           <tr>
             <td style="font-size:13px;color:#3d607f;font-weight:600;padding-right:12px;">Purpose:</td>
             <td><input type="text" name="purpose" id="sitin_purpose" placeholder="e.g. C Programming" required
-                       style="width:100%;padding:8px 11px;border:1px solid var(--blue-bd);border-radius:6px;font-size:13px;font-family:inherit;color:var(--blue-dk);outline:none;"/></td>
+                       style="width:100%;padding:8px 11px;border:1px solid var(--border-color);border-radius:6px;font-size:13px;font-family:inherit;color:var(--text-color);outline:none;"/></td>
           </tr>
           <tr>
             <td style="font-size:13px;color:#3d607f;font-weight:600;padding-right:12px;">Lab:</td>
             <td>
-              <select name="lab" id="sitin_lab" required style="width:100%;padding:8px 11px;border:1px solid var(--blue-bd);border-radius:6px;font-size:13px;font-family:inherit;color:var(--blue-dk);outline:none;">
+              <select name="lab" id="sitin_lab" required style="width:100%;padding:8px 11px;border:1px solid var(--border-color);border-radius:6px;font-size:13px;font-family:inherit;color:var(--text-color);outline:none;">
                 <option value="">Select Lab</option>
                 <option value="524">Lab 524</option>
                 <option value="526">Lab 526</option>
@@ -1210,7 +1271,7 @@ foreach ($all_sitin as $r) {
           <tr>
             <td style="font-size:13px;color:#3d607f;font-weight:600;padding-right:12px;">PC Number:</td>
             <td>
-              <select name="pc_number" id="sitin_pc" required style="width:100%;padding:8px 11px;border:1px solid var(--blue-bd);border-radius:6px;font-size:13px;font-family:inherit;color:var(--blue-dk);outline:none;">
+              <select name="pc_number" id="sitin_pc" required style="width:100%;padding:8px 11px;border:1px solid var(--border-color);border-radius:6px;font-size:13px;font-family:inherit;color:var(--text-color);outline:none;">
                 <option value="">Select PC</option>
                 <option value="1">PC 1</option>
                 <option value="2">PC 2</option>
@@ -1228,17 +1289,18 @@ foreach ($all_sitin as $r) {
           <tr>
             <td style="font-size:13px;color:#3d607f;font-weight:600;padding-right:12px;">Sessions Left:</td>
             <td><input type="text" id="sitin_session" readonly placeholder="Auto-filled for registered students"
-                       style="width:100%;padding:8px 11px;border:1px solid var(--blue-bd);border-radius:6px;font-size:13px;background:var(--gray-100);font-family:inherit;color:var(--blue-dk);"/></td>
+                       style="width:100%;padding:8px 11px;border:1px solid var(--border-color);border-radius:6px;font-size:13px;background:var(--gray-100);font-family:inherit;color:var(--text-color);"/></td>
           </tr>
         </table>
       </div>
       <div class="modal-footer">
-        <button type="button" style="padding:8px 20px;border-radius:6px;border:none;background:var(--gray-200);color:var(--gray-800);font-size:13px;font-weight:600;font-family:inherit;cursor:pointer;" onclick="closeSitinModal()">Cancel</button>
-        <button type="submit" name="do_sitin" style="padding:8px 20px;border-radius:6px;border:none;background:var(--blue);color:#fff;font-size:13px;font-weight:600;font-family:inherit;cursor:pointer;">Sit In</button>
+        <button type="button" style="padding:8px 20px;border-radius:6px;border:none;background:var(--gray-200);color:var(--text-color);font-size:13px;font-weight:600;font-family:inherit;cursor:pointer;" onclick="closeSitinModal()">Cancel</button>
+        <button type="submit" name="do_sitin" style="padding:8px 20px;border-radius:6px;border:none;background:var(--nav-bg);color:#fff;font-size:13px;font-weight:600;font-family:inherit;cursor:pointer;">Sit In</button>
       </div>
     </form>
   </div>
 </div>
+
 
 <!-- ADD STUDENT MODAL -->
 <div class="modal-overlay" id="addStudentModal">
@@ -1282,6 +1344,7 @@ foreach ($all_sitin as $r) {
   </div>
 </div>
 
+
 <!-- EDIT STUDENT MODAL -->
 <div class="modal-overlay" id="editStudentModal">
   <div class="modal" style="max-width:520px;">
@@ -1324,6 +1387,7 @@ foreach ($all_sitin as $r) {
   </div>
 </div>
 
+
 <!-- EDIT SESSION MODAL -->
 <div class="modal-overlay" id="editSessionModal">
   <div class="modal" style="max-width:360px;">
@@ -1335,22 +1399,22 @@ foreach ($all_sitin as $r) {
       <div class="modal-body">
         <input type="hidden" name="student_id" id="esess_student_id"/>
         <div style="text-align:center;margin-bottom:16px;">
-          <div style="font-size:12px;color:var(--gray-400);margin-bottom:4px;">Student</div>
-          <div style="font-size:15px;font-weight:700;color:var(--blue);" id="esess_name"></div>
+          <div style="font-size:12px;color:var(--text-color);margin-bottom:4px;">Student</div>
+          <div style="font-size:15px;font-weight:700;color:var(--text-color);" id="esess_name"></div>
         </div>
         <div style="display:flex;align-items:center;justify-content:center;gap:12px;margin-bottom:14px;">
           <button type="button" onclick="adjustSession(-1)"
-                  style="width:36px;height:36px;border-radius:50%;border:2px solid var(--gray-200);background:#fff;font-size:20px;font-weight:700;cursor:pointer;display:flex;align-items:center;justify-content:center;color:var(--red);">−</button>
+                  style="width:36px;height:36px;border-radius:50%;border:2px solid var(--border-color);background:var(--card-bg);font-size:20px;font-weight:700;cursor:pointer;display:flex;align-items:center;justify-content:center;color:var(--red);">−</button>
           <input type="number" name="session" id="esess_value" min="0" max="30"
-                 style="width:80px;text-align:center;padding:10px;border:2px solid var(--blue-bd);border-radius:6px;font-size:22px;font-weight:800;color:var(--blue);font-family:inherit;outline:none;"/>
+                 style="width:80px;text-align:center;padding:10px;border:2px solid var(--border-color);border-radius:6px;font-size:22px;font-weight:800;color:var(--text-color);font-family:inherit;outline:none;"/>
           <button type="button" onclick="adjustSession(1)"
-                  style="width:36px;height:36px;border-radius:50%;border:2px solid var(--gray-200);background:#fff;font-size:20px;font-weight:700;cursor:pointer;display:flex;align-items:center;justify-content:center;color:#16a34a;">+</button>
+                  style="width:36px;height:36px;border-radius:50%;border:2px solid var(--border-color);background:var(--card-bg);font-size:20px;font-weight:700;cursor:pointer;display:flex;align-items:center;justify-content:center;color:#16a34a;">+</button>
         </div>
-        <div style="text-align:center;font-size:12px;color:var(--gray-400);margin-bottom:8px;">Value between <strong>0</strong> and <strong>30</strong></div>
+        <div style="text-align:center;font-size:12px;color:var(--text-color);margin-bottom:8px;">Value between <strong>0</strong> and <strong>30</strong></div>
         <div style="display:flex;justify-content:center;gap:6px;flex-wrap:wrap;">
           <?php foreach([0,5,10,15,20,25,30] as $preset): ?>
           <button type="button" onclick="setSession(<?= $preset ?>)"
-                  style="padding:4px 10px;border-radius:20px;border:1.5px solid var(--gray-200);background:#fff;font-size:12px;font-weight:600;cursor:pointer;color:var(--gray-600);"><?= $preset ?></button>
+                  style="padding:4px 10px;border-radius:20px;border:1.5px solid var(--border-color);background:var(--card-bg);font-size:12px;font-weight:600;cursor:pointer;color:var(--text-color);"><?= $preset ?></button>
           <?php endforeach; ?>
         </div>
       </div>
@@ -1361,6 +1425,7 @@ foreach ($all_sitin as $r) {
     </form>
   </div>
 </div>
+
 
 <script>
 // ── Student data for JS search ──

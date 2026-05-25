@@ -15,20 +15,51 @@ if (!$sitin_id) {
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>CCS | Submit Feedback</title>
     <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <script src="darkmode.js"></script>
     <style>
+        :root {
+            --bg-color: #f7f8fa;
+            --text-color: #1e2a38;
+            --card-bg: #ffffff;
+            --nav-bg: #1e3a5f;
+            --border-color: #e2e6ea;
+            --shadow: 0 8px 30px rgba(0,0,0,0.08);
+            --input-bg: #fafbfc;
+            --input-border: #d0d7e2;
+            --hover-bg: #f8f9fa;
+            --icon-bg: #eef3f9;
+            --icon-color: #1e3a5f;
+        }
+
+        body.dark-mode {
+            --bg-color: #1a1f2e;
+            --text-color: #e8edf5;
+            --card-bg: #242b3d;
+            --nav-bg: #141824;
+            --border-color: #2e364a;
+            --shadow: 0 8px 30px rgba(0,0,0,0.4);
+            --input-bg: #242b3d;
+            --input-border: #2e364a;
+            --hover-bg: #2a3248;
+            --icon-bg: #2a3248;
+            --icon-color: #e8edf5;
+        }
+
         * { box-sizing: border-box; margin: 0; padding: 0; }
         body {
             font-family: 'Plus Jakarta Sans', sans-serif;
-            background: #f7f8fa;
+            background: var(--bg-color);
+            color: var(--text-color);
             min-height: 100vh;
             display: flex;
             flex-direction: column;
             align-items: center;
+            transition: background 0.3s, color 0.3s;
         }
         
         .navbar {
             width: 100%;
-            background: #1e3a5f;
+            background: var(--nav-bg);
             padding: 14px 30px;
             display: flex;
             justify-content: center;
@@ -36,6 +67,7 @@ if (!$sitin_id) {
             position: sticky;
             top: 0;
             z-index: 100;
+            transition: background 0.3s;
         }
         .navbar span {
             color: #fff;
@@ -54,13 +86,14 @@ if (!$sitin_id) {
         }
         
         .feedback-card {
-            background: #fff;
+            background: var(--card-bg);
             width: 100%;
             max-width: 560px;
             padding: 40px 36px;
             border-radius: 16px;
-            box-shadow: 0 8px 30px rgba(0,0,0,0.08);
-            border: 1px solid #eef0f3;
+            box-shadow: var(--shadow);
+            border: 1px solid var(--border-color);
+            transition: background 0.3s, border-color 0.3s;
         }
         
         .feedback-header {
@@ -71,32 +104,35 @@ if (!$sitin_id) {
         .icon-circle {
             width: 60px;
             height: 60px;
-            background: #eef3f9;
+            background: var(--icon-bg);
             border-radius: 50%;
             display: flex;
             align-items: center;
             justify-content: center;
             margin: 0 auto 16px auto;
+            transition: background 0.3s;
         }
         .icon-circle svg {
             width: 28px;
             height: 28px;
-            stroke: #1e3a5f;
+            stroke: var(--icon-color);
             fill: none;
             stroke-width: 1.5;
             stroke-linecap: round;
             stroke-linejoin: round;
+            transition: stroke 0.3s;
         }
         
         h2 {
-            color: #1e3a5f;
+            color: var(--text-color);
             font-size: 22px;
             font-weight: 700;
             margin-bottom: 6px;
+            transition: color 0.3s;
         }
         
         .subtitle {
-            color: #7a8a9e;
+            color: #8e9bb3;
             font-size: 14px;
             line-height: 1.6;
         }
@@ -110,20 +146,19 @@ if (!$sitin_id) {
             width: 100%;
             height: 150px;
             padding: 14px 16px;
-            border: 1.5px solid #d0d7e2;
+            border: 1.5px solid var(--input-border);
             border-radius: 10px;
             font-size: 14px;
             font-family: 'Plus Jakarta Sans', sans-serif;
-            color: #1e2a38;
+            color: var(--text-color);
             resize: none;
             outline: none;
-            transition: border-color 0.2s, box-shadow 0.2s;
-            background: #fafbfc;
+            transition: border-color 0.2s, box-shadow 0.2s, background 0.3s;
+            background: var(--input-bg);
         }
         textarea:focus {
             border-color: #1e3a5f;
             box-shadow: 0 0 0 4px rgba(30, 58, 95, 0.06);
-            background: #fff;
         }
         textarea::placeholder {
             color: #9aa5b4;
@@ -132,7 +167,7 @@ if (!$sitin_id) {
         .char-count {
             text-align: right;
             font-size: 12px;
-            color: #9aa5b4;
+            color: #8e9bb3;
             margin-top: 4px;
             font-weight: 500;
         }
@@ -166,10 +201,10 @@ if (!$sitin_id) {
         
         .btn-cancel {
             padding: 12px 24px;
-            border: 1.5px solid #d0d7e2;
+            border: 1.5px solid var(--input-border);
             border-radius: 8px;
             background: transparent;
-            color: #4a5568;
+            color: var(--text-color);
             font-size: 14px;
             font-weight: 600;
             font-family: 'Plus Jakarta Sans', sans-serif;
@@ -183,7 +218,7 @@ if (!$sitin_id) {
         .btn-cancel:hover {
             border-color: #1e3a5f;
             color: #1e3a5f;
-            background: #f8f9fa;
+            background: var(--hover-bg);
         }
         
         @media (max-width: 500px) {

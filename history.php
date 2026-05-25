@@ -15,29 +15,54 @@ $rows = $history->fetchAll();
 <meta charset="UTF-8"/><meta name="viewport" content="width=device-width, initial-scale=1.0"/>
 <title>CCS | Sit-in History</title>
 <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap" rel="stylesheet"/>
+<script src="darkmode.js"></script>
 <style>
+:root {
+    --bg-color: #f7f8fa;
+    --text-color: #1e2a38;
+    --card-bg: #ffffff;
+    --nav-bg: #1e3a5f;
+    --border-color: #e2e6ea;
+    --shadow: 0 4px 12px rgba(0,0,0,0.08);
+    --input-bg: #ffffff;
+    --input-border: #d0d7e2;
+    --hover-bg: #f0f4f9;
+}
+
+body.dark-mode {
+    --bg-color: #0f172a;
+    --text-color: #e2e8f0;
+    --card-bg: #1e293b;
+    --nav-bg: #0f172a;
+    --border-color: #334155;
+    --shadow: 0 4px 12px rgba(0,0,0,0.5);
+    --input-bg: #1e293b;
+    --input-border: #334155;
+    --hover-bg: #1e293b;
+}
+
 *{box-sizing:border-box;margin:0;padding:0;}
-body{font-family:'Plus Jakarta Sans',sans-serif;background:#f7f8fa;color:#1e2a38;min-height:100vh;font-size:14px;}
-nav{background:#1e3a5f;height:54px;padding:0 24px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:100;}
+body{font-family:'Plus Jakarta Sans',sans-serif;background:var(--bg-color);color:var(--text-color);min-height:100vh;font-size:14px;transition:background 0.3s, color 0.3s;}
+nav{background:var(--nav-bg);height:54px;padding:0 24px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:100;transition:background 0.3s;}
 .nav-brand{font-size:13.5px;font-weight:700;color:#fff;}
 .nav-links{display:flex;align-items:center;gap:1px;}
 .nav-links a{font-size:13px;color:rgba(255,255,255,0.7);text-decoration:none;padding:6px 10px;border-radius:5px;transition:all .15s;white-space:nowrap;}
 .nav-links a:hover,.nav-links a.active{color:#fff;background:rgba(255,255,255,0.1);}
-.btn-logout{background:#dc3545 !important;color:#fff !important;font-weight:600 !important;border-radius:5px;padding:6px 14px !important;margin-left:6px;}
-.btn-logout:hover{background:#c82333 !important;}
+.btn-logout{background:#c53030 !important;color:#fff !important;font-weight:600 !important;border-radius:5px;padding:6px 14px !important;margin-left:6px;}
+.btn-logout:hover{background:#9b2c2c !important;}
 .page-body{max-width:1200px;margin:0 auto;padding:28px 20px 52px;}
 .page-title{font-size:22px;font-weight:800;color:#1e3a5f;margin-bottom:24px;text-align:center;}
 .page-title span{display:block;font-size:13px;font-weight:400;color:#9aa5b4;margin-top:4px;}
-.toolbar{display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;flex-wrap:wrap;gap:10px;background:#fff;padding:12px 16px;border-radius:8px;border:1px solid #e2e6ea;}
+.toolbar{display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;flex-wrap:wrap;gap:10px;background:var(--card-bg);padding:12px 16px;border-radius:8px;border:1px solid var(--border-color);}
 .toolbar-left{display:flex;align-items:center;gap:10px;font-size:13px;color:#4a5568;flex-wrap:wrap;}
-.toolbar-left select{padding:5px 10px;border:1px solid #d0d7e2;border-radius:6px;font-size:13px;font-family:'Plus Jakarta Sans',sans-serif;outline:none;background:#fff;font-weight:500;}
+.toolbar-left select{padding:5px 10px;border:1px solid #d0d7e2;border-radius:6px;font-size:13px;font-family:'Plus Jakarta Sans',sans-serif;outline:none;background:var(--card-bg);font-weight:500;}
 .toolbar-right{display:flex;align-items:center;gap:8px;font-size:13px;color:#4a5568;}
 .toolbar-right input{padding:6px 12px;border:1px solid #d0d7e2;border-radius:6px;font-size:13px;font-family:'Plus Jakarta Sans',sans-serif;outline:none;width:200px;transition:border-color 0.2s;}
 .toolbar-right input:focus{border-color:#1e3a5f;}
-.card{background:#fff;border-radius:12px;box-shadow:0 4px 12px rgba(0,0,0,0.08);overflow:hidden;border:none;}
+.card{background:var(--card-bg);border-radius:12px;box-shadow:var(--shadow);overflow:hidden;border:none;}
 .table-wrap{overflow-x:hidden;}
 table{width:100%;border-collapse:collapse;table-layout:fixed;}
-thead tr{background:linear-gradient(135deg, #1e3a5f, #2a5a8a);color:#fff;}
+thead tr{background:var(--nav-bg);color:#fff;}
 thead th{padding:14px 16px;text-align:left;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;border-right:1px solid rgba(255,255,255,0.05);}
 thead th:last-child{border-right:none;}
 tbody tr{border-bottom:1px solid #eef0f3;transition:all 0.2s;cursor:default;}
@@ -63,17 +88,7 @@ tbody td{padding:12px 16px;font-size:13px;color:#4a5568;}
 </style>
 </head>
 <body>
-  <nav>
-  <div class="nav-brand">CCS Sit-in Monitoring System</div>
-  <div class="nav-links">
-    <?php include 'notif_dropdown.php'; ?>
-    <a href="homepage.php">Home</a>
-    <a href="profile.php">Edit Profile</a>
-    <a href="history.php" class="active">History</a>
-    <a href="reservation.php">Reservation</a>
-    <a href="logout.php" class="btn-logout">Log out</a>
-  </div>
-</nav>
+<?php include 'header.php'; ?>
 <div class="page-body">
   <div class="page-title">
     📋 Sit-in History

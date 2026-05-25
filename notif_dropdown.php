@@ -17,6 +17,43 @@ $notifStmt->execute([$_SESSION['student_id']]);
 $recent_notifications = $notifStmt->fetchAll();
 ?>
 
+<style>
+/* Dark mode styles for notification dropdown */
+body.dark-mode #notif-dropdown {
+    background-color: #2c303a !important;
+    border-color: #444 !important;
+}
+
+body.dark-mode #notif-dropdown div:first-child {
+    color: #ffffff !important;
+    border-bottom-color: #444 !important;
+}
+
+body.dark-mode #notif-dropdown a {
+    border-bottom-color: #444 !important;
+}
+
+body.dark-mode #notif-dropdown a div:first-child {
+    color: #e8edf5 !important;
+}
+
+body.dark-mode #notif-dropdown a div:last-child {
+    color: #a0a8b8 !important;
+}
+
+body.dark-mode #notif-dropdown a[href="notifications.php"]:last-child {
+    color: #7aa2f7 !important;
+}
+
+body.dark-mode #notif-dropdown a:hover {
+    background-color: #3a4050 !important;
+}
+
+body.dark-mode #notif-dropdown .no-notifications {
+    color: #a0a8b8 !important;
+}
+</style>
+
 <div class="notif-wrapper" style="position:relative;display:inline-block;">
     <a onclick="toggleNotifDropdown()" style="display:inline-flex;align-items:center;gap:4px;cursor:pointer;color:rgba(255,255,255,0.7);text-decoration:none;font-size:13px;padding:6px 10px;border-radius:5px;transition:all .15s;position:relative;">
         <!-- Bell Icon SVG with Badge -->
@@ -44,7 +81,7 @@ $recent_notifications = $notifStmt->fetchAll();
             <?php endforeach; ?>
             <a href="notifications.php" style="display:block;text-align:center;padding:8px;font-size:12px;color:#1e3a5f;font-weight:700;text-decoration:none;">View All</a>
         <?php else: ?>
-            <div style="padding:20px;text-align:center;color:#9aa5b4;font-size:12px;">No new notifications</div>
+            <div class="no-notifications" style="padding:20px;text-align:center;color:#9aa5b4;font-size:12px;">No new notifications</div>
         <?php endif; ?>
     </div>
 </div>
